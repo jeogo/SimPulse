@@ -72,6 +72,12 @@ class SimPulseTelegramBot:
                 current_state = self.navigation_history[user_id].pop()
                 previous_state = self.navigation_history[user_id][-1]
                 logger.debug(f"User {user_id} navigation: popped '{current_state}' -> returning to '{previous_state}' -> stack: {self.navigation_history[user_id]}")
+                
+                # Security check: Admin users should never be directed to main_menu
+                if self.is_admin(user_id) and previous_state == "main_menu":
+                    logger.warning(f"Admin {user_id} was about to be directed to main_menu, redirecting to admin_menu")
+                    return "admin_menu"
+                
                 return previous_state
         
         # Fallback: determine appropriate default based on user role
@@ -83,6 +89,22 @@ class SimPulseTelegramBot:
         """Clear navigation history for user"""
         if user_id in self.navigation_history:
             self.navigation_history[user_id] = []
+    
+    def ensure_admin_navigation(self, user_id: int):
+        """Ensure admin user has proper navigation state"""
+        if self.is_admin(user_id):
+            # Clear any incorrect navigation history
+            if user_id in self.navigation_history:
+                # Remove any main_menu entries for admin users
+                self.navigation_history[user_id] = [
+                    state for state in self.navigation_history[user_id] 
+                    if state != "main_menu"
+                ]
+                # Ensure admin_menu is in the stack
+                if not self.navigation_history[user_id] or self.navigation_history[user_id][-1] != "admin_menu":
+                    self.navigation_history[user_id].append("admin_menu")
+            else:
+                self.navigation_history[user_id] = ["admin_menu"]
     
     async def handle_back_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle back button navigation"""
@@ -273,6 +295,12 @@ class SimPulseTelegramBot:
     
     async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show main menu for approved users"""
+        user_id = update.effective_user.id
+        
+        # Set navigation state for regular users only
+        if not self.is_admin(user_id):
+            self.push_navigation(user_id, "main_menu")
+        
         keyboard = [[button] for button in MAIN_MENU_BUTTONS]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
@@ -430,7 +458,8 @@ class SimPulseTelegramBot:
             await self.show_main_menu(update, context)
             return
         
-        # Set navigation state
+        # Ensure proper admin navigation state
+        self.ensure_admin_navigation(user_id)
         self.push_navigation(user_id, "admin_menu")
         
         keyboard = [[button] for button in ADMIN_MENU_BUTTONS]
@@ -1542,7 +1571,7 @@ class SimPulseTelegramBot:
                     if not pdf_path or not os.path.exists(pdf_path):
                         try:
                             # Generate PDF for this settlement
-                            logger.info(f"Generating PDF for settlement {settlement['id']}")
+                            logger.info(f"Generating enhanced PDF for settlement {settlement['id']}")
                             
                             # Get settlement verifications
                             settlement_verifications = db.get_verifications_by_settlement(settlement['id'])
@@ -1551,19 +1580,43 @@ class SimPulseTelegramBot:
                                 from telegram_bot.utils.pdf_generator import PDFGenerator
                                 pdf_generator = PDFGenerator()
                                 
+                                # Get additional data for enhanced PDF
+                                admin_data = None
+                                group_data = None
+                                sim_data = None
+                                
+                                try:
+                                    # Get admin info
+                                    admin_id = settlement.get('admin_telegram_id')
+                                    if admin_id:
+                                        admin_data = db.get_telegram_user_by_id(admin_id)
+                                    
+                                    # Get group info
+                                    if selected_user.get('group_id'):
+                                        group_data = db.get_group_by_id(selected_user['group_id'])
+                                    
+                                    # Get SIM info
+                                    sim_data = db.get_user_sim_by_telegram_id(selected_user['telegram_id'])
+                                    
+                                except Exception as data_error:
+                                    logger.warning(f"Could not fetch additional data for PDF: {data_error}")
+                                
                                 pdf_path = pdf_generator.generate_settlement_report_sync(
                                     user_data=selected_user,
                                     verifications=settlement_verifications,
-                                    settlement_data=settlement
+                                    settlement_data=settlement,
+                                    admin_data=admin_data,
+                                    group_data=group_data,
+                                    sim_data=sim_data
                                 )
                                 
                                 if pdf_path and os.path.exists(pdf_path):
                                     # Update settlement with PDF path
                                     db.update_settlement_pdf_path(settlement['id'], pdf_path)
-                                    logger.info(f"Generated and saved PDF for settlement {settlement['id']}")
+                                    logger.info(f"Generated and saved enhanced PDF for settlement {settlement['id']}")
                                 
                         except Exception as e:
-                            logger.error(f"Error generating PDF for settlement {settlement['id']}: {e}")
+                            logger.error(f"Error generating enhanced PDF for settlement {settlement['id']}: {e}")
                     
                     # Try to send the PDF
                     if pdf_path and os.path.exists(pdf_path):

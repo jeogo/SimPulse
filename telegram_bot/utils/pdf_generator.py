@@ -24,8 +24,10 @@ class PDFGenerator:
     """PDF generator for settlement reports"""
     
     def __init__(self):
-        self.output_dir = "data/settlement_reports"
-        self.fonts_dir = "data/fonts"
+        # Get the project root directory (SimPulse folder)
+        self.project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.output_dir = os.path.join(self.project_root, "data", "settlement_reports")
+        self.fonts_dir = os.path.join(self.project_root, "data", "fonts")
         self.ensure_output_directory()
         self.ensure_fonts_directory()
         self.setup_arabic_font()
@@ -62,17 +64,38 @@ class PDFGenerator:
     def setup_arabic_font(self):
         """Setup Arabic font for PDF generation"""
         try:
-            # Check if Arabic font exists
-            font_path = os.path.join(self.fonts_dir, "NotoSansArabic-Regular.ttf")
+            # Multiple possible font paths
+            font_paths = [
+                os.path.join(self.fonts_dir, "NotoSansArabic-Regular.ttf"),
+                os.path.join(os.getcwd(), "data", "fonts", "NotoSansArabic-Regular.ttf"),
+                os.path.join(os.path.dirname(__file__), "..", "..", "data", "fonts", "NotoSansArabic-Regular.ttf")
+            ]
             
-            if os.path.exists(font_path):
-                pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
-                self.arabic_font = 'ArabicFont'
-                logger.info(f"Arabic font registered successfully from: {font_path}")
-            else:
+            font_found = False
+            for font_path in font_paths:
+                font_path = os.path.abspath(font_path)
+                if os.path.exists(font_path):
+                    try:
+                        pdfmetrics.registerFont(TTFont('ArabicFont', font_path))
+                        self.arabic_font = 'ArabicFont'
+                        logger.info(f"Arabic font registered successfully from: {font_path}")
+                        font_found = True
+                        break
+                    except Exception as reg_error:
+                        logger.warning(f"Could not register font from {font_path}: {reg_error}")
+                        continue
+            
+            if not font_found:
+                # List available paths for debugging
+                logger.warning("Arabic font not found in any of these paths:")
+                for path in font_paths:
+                    abs_path = os.path.abspath(path)
+                    exists = "EXISTS" if os.path.exists(abs_path) else "NOT FOUND"
+                    logger.warning(f"  - {abs_path} [{exists}]")
+                
                 # Fallback to system fonts
                 self.arabic_font = 'Helvetica'
-                logger.warning(f"Arabic font not found at: {font_path}, using Helvetica fallback")
+                logger.warning("Using Helvetica fallback")
                 
         except Exception as e:
             logger.error(f"Could not setup Arabic font: {e}")
@@ -331,8 +354,8 @@ class PDFGenerator:
         except Exception as e:
             logger.error(f"Error cleaning up old reports: {e}")
 
-    def generate_settlement_report_sync(self, user_data: Dict, verifications: list, settlement_data: Dict) -> str:
-        """Generate settlement report PDF (synchronous version)"""
+    def generate_settlement_report_sync(self, user_data: Dict, verifications: list, settlement_data: Dict, admin_data: Dict = None, group_data: Dict = None, sim_data: Dict = None) -> str:
+        """Generate simple settlement report PDF (synchronous version)"""
         try:
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -345,149 +368,234 @@ class PDFGenerator:
             doc = SimpleDocTemplate(
                 file_path,
                 pagesize=A4,
-                rightMargin=50,
-                leftMargin=50,
-                topMargin=50,
-                bottomMargin=50
+                rightMargin=30,
+                leftMargin=30,
+                topMargin=30,
+                bottomMargin=30
             )
             
             # Build content
             story = []
             styles = getSampleStyleSheet()
             
-            # Create custom styles for Arabic text
-            arabic_style = ParagraphStyle(
-                'ArabicNormal',
+            # Simple styles with proper font usage
+            normal_style = ParagraphStyle(
+                'Normal',
                 parent=styles['Normal'],
-                fontName=self.arabic_font,
-                fontSize=12,
-                leading=18,
-                alignment=2  # Right alignment for Arabic
+                fontName='Helvetica',  # Use Helvetica for English text
+                fontSize=11,
+                leading=16,
+                alignment=0  # Left alignment
             )
             
-            arabic_title_style = ParagraphStyle(
-                'ArabicTitle',
+            heading_style = ParagraphStyle(
+                'Heading',
+                parent=styles['Heading2'],
+                fontName='Helvetica-Bold',  # Use Helvetica Bold for headings
+                fontSize=14,
+                leading=18,
+                alignment=0,  # Left alignment
+                spaceAfter=10
+            )
+            
+            title_style = ParagraphStyle(
+                'Title',
                 parent=styles['Title'],
-                fontName=self.arabic_font,
-                fontSize=18,
-                leading=24,
+                fontName='Helvetica-Bold',  # Use Helvetica Bold for title
+                fontSize=16,
+                leading=20,
                 alignment=1,  # Center alignment
                 spaceAfter=20
             )
             
-            arabic_heading_style = ParagraphStyle(
-                'ArabicHeading',
-                parent=styles['Heading2'],
-                fontName=self.arabic_font,
-                fontSize=14,
-                leading=20,
-                alignment=2,  # Right alignment
-                spaceAfter=12
-            )
-            
-            # Title
-            title_text = self.format_arabic_text("تقرير التسوية")
-            story.append(Paragraph(title_text, arabic_title_style))
+            # Simple title without Arabic reshaping
+            story.append(Paragraph("Settlement Report", title_style))
             story.append(Spacer(1, 20))
             
-            # Settlement info
-            settlement_date = settlement_data.get('settlement_date', '')[:16] if settlement_data.get('settlement_date') else 'غير محدد'
+            # User Information - Clean format
+            story.append(Paragraph("USER INFORMATION", heading_style))
+            story.append(Spacer(1, 10))
+            
+            # Create user info table for better layout
+            user_info_data = [
+                ["Full Name:", user_data.get('full_name', 'Not specified')],
+                ["Phone Number:", user_data.get('phone_number', 'Not specified')],
+                ["Telegram ID:", str(user_data.get('telegram_id', 'Not specified'))],
+                ["User Status:", user_data.get('status', 'unknown').upper()]
+            ]
+            
+            user_table = Table(user_info_data, colWidths=[120, 300])
+            user_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightblue),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BACKGROUND', (1, 0), (1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            story.append(user_table)
+            story.append(Spacer(1, 15))
+            
+            # Settlement Information - Clean format
+            settlement_date = settlement_data.get('settlement_date', '')[:16] if settlement_data.get('settlement_date') else 'Not specified'
             total_amount = settlement_data.get('total_amount', 0)
-            total_verifications = settlement_data.get('total_verifications', len(verifications))
             
-            info_text = f"""
-            معرف التسوية: #{settlement_data.get('id', 'غير محدد')}
-            تاريخ التسوية: {settlement_date}
-            إجمالي المبلغ: {total_amount:.2f} دج
-            عدد التحققات: {total_verifications}
-            """
+            story.append(Paragraph("SETTLEMENT INFORMATION", heading_style))
+            story.append(Spacer(1, 10))
             
-            formatted_info = self.format_arabic_text(info_text)
-            story.append(Paragraph(formatted_info, arabic_style))
-            story.append(Spacer(1, 20))
+            settlement_info_data = [
+                ["Settlement ID:", f"#{settlement_data.get('id', 'Not specified')}"],
+                ["Settlement Date:", settlement_date],
+                ["Total Amount:", f"{total_amount:.2f} DZD"],
+                ["Total Verifications:", str(len(verifications))]
+            ]
             
-            # User information
-            user_info_title = self.format_arabic_text("معلومات المستخدم")
-            story.append(Paragraph(user_info_title, arabic_heading_style))
+            settlement_table = Table(settlement_info_data, colWidths=[120, 300])
+            settlement_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightgreen),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BACKGROUND', (1, 0), (1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
             
-            user_info_text = f"""
-            الاسم الكامل: {user_data.get('full_name', 'غير محدد')}
-            رقم الهاتف: {user_data.get('phone_number', 'غير محدد')}
-            معرف تيليجرام: {user_data.get('telegram_id', 'غير محدد')}
-            """
-            
-            formatted_user_info = self.format_arabic_text(user_info_text)
-            story.append(Paragraph(formatted_user_info, arabic_style))
+            story.append(settlement_table)
             story.append(Spacer(1, 20))
             
             # Verifications table
-            verifications_title = self.format_arabic_text("تفاصيل التحققات")
-            story.append(Paragraph(verifications_title, arabic_heading_style))
+            story.append(Paragraph("VERIFICATION DETAILS", heading_style))
+            story.append(Spacer(1, 10))
             
-            # Create table data
+            # Create simple table data
             table_data = []
             
-            # Headers (in Arabic)
-            headers = [
-                self.format_arabic_text("التاريخ"),
-                self.format_arabic_text("المبلغ (دج)"),
-                self.format_arabic_text("النتيجة"),
-                self.format_arabic_text("ملاحظات")
-            ]
+            # Headers in English with clear formatting
+            headers = ["DATE & TIME", "AMOUNT (DZD)", "RESULT", "NOTES"]
             table_data.append(headers)
             
             # Add verification data
+            successful_count = 0
+            failed_count = 0
+            successful_amount = 0
+            
             for verification in verifications:
-                date_str = verification.get('created_at', '')[:16] if verification.get('created_at') else 'غير محدد'
+                date_str = verification.get('created_at', '')[:16] if verification.get('created_at') else 'Not specified'
                 amount = verification.get('amount', 0)
-                result = 'نجح' if verification.get('result') == 'success' else 'فشل'
-                notes = verification.get('notes', 'لا توجد ملاحظات')
+                result = verification.get('result', 'unknown')
+                notes = verification.get('notes', 'No notes')
+                
+                # Count successful verifications
+                if result == 'success':
+                    successful_count += 1
+                    successful_amount += float(amount)
+                    result_display = "SUCCESS"
+                else:
+                    failed_count += 1
+                    result_display = "FAILED"
                 
                 row = [
-                    self.format_arabic_text(date_str),
+                    date_str,
                     f"{amount:.2f}",
-                    self.format_arabic_text(result),
-                    self.format_arabic_text(notes)
+                    result_display,
+                    notes[:40] + "..." if len(notes) > 40 else notes
                 ]
                 table_data.append(row)
             
-            # Create table
-            table = Table(table_data, colWidths=[120, 80, 80, 200])
+            # Create table with clear styling
+            table = Table(table_data, colWidths=[110, 70, 70, 230])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.darkblue),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('FONTNAME', (0, 0), (-1, 0), self.arabic_font),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 1), (-1, -1), 'Helvetica'),
                 ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('FONTNAME', (0, 1), (-1, -1), self.arabic_font),
-                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('FONTSIZE', (1, 1), (-1, -1), 9),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('TOPPADDING', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+                ('TOPPADDING', (0, 1), (-1, -1), 8),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ]))
             
             story.append(table)
             story.append(Spacer(1, 20))
             
-            # Summary
-            summary_title = self.format_arabic_text("ملخص التسوية")
-            story.append(Paragraph(summary_title, arabic_heading_style))
+            # Summary of successful verifications
+            story.append(Paragraph("SUMMARY", heading_style))
+            story.append(Spacer(1, 10))
             
-            summary_text = f"""
-            إجمالي عدد التحققات: {len(verifications)}
-            إجمالي المبلغ: {total_amount:.2f} دج
-            تاريخ إنشاء التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            """
+            success_rate = (successful_count / len(verifications) * 100) if len(verifications) > 0 else 0.0
             
-            formatted_summary = self.format_arabic_text(summary_text)
-            story.append(Paragraph(formatted_summary, arabic_style))
+            # Create summary table for better presentation
+            summary_data = [
+                ["Total Verifications:", str(len(verifications))],
+                ["Successful Verifications:", str(successful_count)],
+                ["Failed Verifications:", str(failed_count)],
+                ["Total Successful Amount:", f"{successful_amount:.2f} DZD"],
+                ["Success Rate:", f"{success_rate:.1f}%"],
+                ["Settlement Date:", settlement_date],
+                ["Report Generated:", datetime.now().strftime('%Y-%m-%d %H:%M:%S')]
+            ]
+            
+            summary_table = Table(summary_data, colWidths=[160, 260])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (0, -1), colors.lightyellow),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+                ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BACKGROUND', (1, 0), (1, -1), colors.white),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            story.append(summary_table)
             
             # Build PDF
             doc.build(story)
             
-            logger.info(f"Settlement report generated successfully: {file_path}")
+            logger.info(f"Simple settlement report generated successfully: {file_path}")
             return file_path
             
         except Exception as e:
-            logger.error(f"Error generating settlement report: {e}")
+            logger.error(f"Error generating simple settlement report: {e}")
             return None
+    
+    def get_user_status_arabic(self, status: str) -> str:
+        """Convert user status to Arabic"""
+        status_map = {
+            'approved': 'معتمد ✅',
+            'pending': 'في الانتظار ⏳',
+            'rejected': 'مرفوض ❌',
+            'blocked': 'محظور 🚫'
+        }
+        return status_map.get(status, f'غير معروف ({status})')
+    
+    def get_sim_status_arabic(self, status: str) -> str:
+        """Convert SIM status to Arabic"""
+        status_map = {
+            'active': 'نشطة ✅',
+            'inactive': 'غير نشطة ❌',
+            'maintenance': 'تحت الصيانة 🔧',
+            'blocked': 'محظورة 🚫'
+        }
+        return status_map.get(status, f'غير معروف ({status})')
