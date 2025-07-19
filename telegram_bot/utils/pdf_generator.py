@@ -330,3 +330,164 @@ class PDFGenerator:
                         
         except Exception as e:
             logger.error(f"Error cleaning up old reports: {e}")
+
+    def generate_settlement_report_sync(self, user_data: Dict, verifications: list, settlement_data: Dict) -> str:
+        """Generate settlement report PDF (synchronous version)"""
+        try:
+            # Generate filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            username = user_data.get('full_name', 'user').replace(' ', '_')
+            settlement_id = settlement_data.get('id', 'unknown')
+            filename = f"settlement_{settlement_id}_{user_data['telegram_id']}_{username}_{timestamp}.pdf"
+            file_path = os.path.join(self.output_dir, filename)
+            
+            # Create PDF document
+            doc = SimpleDocTemplate(
+                file_path,
+                pagesize=A4,
+                rightMargin=50,
+                leftMargin=50,
+                topMargin=50,
+                bottomMargin=50
+            )
+            
+            # Build content
+            story = []
+            styles = getSampleStyleSheet()
+            
+            # Create custom styles for Arabic text
+            arabic_style = ParagraphStyle(
+                'ArabicNormal',
+                parent=styles['Normal'],
+                fontName=self.arabic_font,
+                fontSize=12,
+                leading=18,
+                alignment=2  # Right alignment for Arabic
+            )
+            
+            arabic_title_style = ParagraphStyle(
+                'ArabicTitle',
+                parent=styles['Title'],
+                fontName=self.arabic_font,
+                fontSize=18,
+                leading=24,
+                alignment=1,  # Center alignment
+                spaceAfter=20
+            )
+            
+            arabic_heading_style = ParagraphStyle(
+                'ArabicHeading',
+                parent=styles['Heading2'],
+                fontName=self.arabic_font,
+                fontSize=14,
+                leading=20,
+                alignment=2,  # Right alignment
+                spaceAfter=12
+            )
+            
+            # Title
+            title_text = self.format_arabic_text("تقرير التسوية")
+            story.append(Paragraph(title_text, arabic_title_style))
+            story.append(Spacer(1, 20))
+            
+            # Settlement info
+            settlement_date = settlement_data.get('settlement_date', '')[:16] if settlement_data.get('settlement_date') else 'غير محدد'
+            total_amount = settlement_data.get('total_amount', 0)
+            total_verifications = settlement_data.get('total_verifications', len(verifications))
+            
+            info_text = f"""
+            معرف التسوية: #{settlement_data.get('id', 'غير محدد')}
+            تاريخ التسوية: {settlement_date}
+            إجمالي المبلغ: {total_amount:.2f} دج
+            عدد التحققات: {total_verifications}
+            """
+            
+            formatted_info = self.format_arabic_text(info_text)
+            story.append(Paragraph(formatted_info, arabic_style))
+            story.append(Spacer(1, 20))
+            
+            # User information
+            user_info_title = self.format_arabic_text("معلومات المستخدم")
+            story.append(Paragraph(user_info_title, arabic_heading_style))
+            
+            user_info_text = f"""
+            الاسم الكامل: {user_data.get('full_name', 'غير محدد')}
+            رقم الهاتف: {user_data.get('phone_number', 'غير محدد')}
+            معرف تيليجرام: {user_data.get('telegram_id', 'غير محدد')}
+            """
+            
+            formatted_user_info = self.format_arabic_text(user_info_text)
+            story.append(Paragraph(formatted_user_info, arabic_style))
+            story.append(Spacer(1, 20))
+            
+            # Verifications table
+            verifications_title = self.format_arabic_text("تفاصيل التحققات")
+            story.append(Paragraph(verifications_title, arabic_heading_style))
+            
+            # Create table data
+            table_data = []
+            
+            # Headers (in Arabic)
+            headers = [
+                self.format_arabic_text("التاريخ"),
+                self.format_arabic_text("المبلغ (دج)"),
+                self.format_arabic_text("النتيجة"),
+                self.format_arabic_text("ملاحظات")
+            ]
+            table_data.append(headers)
+            
+            # Add verification data
+            for verification in verifications:
+                date_str = verification.get('created_at', '')[:16] if verification.get('created_at') else 'غير محدد'
+                amount = verification.get('amount', 0)
+                result = 'نجح' if verification.get('result') == 'success' else 'فشل'
+                notes = verification.get('notes', 'لا توجد ملاحظات')
+                
+                row = [
+                    self.format_arabic_text(date_str),
+                    f"{amount:.2f}",
+                    self.format_arabic_text(result),
+                    self.format_arabic_text(notes)
+                ]
+                table_data.append(row)
+            
+            # Create table
+            table = Table(table_data, colWidths=[120, 80, 80, 200])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), self.arabic_font),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('FONTNAME', (0, 1), (-1, -1), self.arabic_font),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            
+            story.append(table)
+            story.append(Spacer(1, 20))
+            
+            # Summary
+            summary_title = self.format_arabic_text("ملخص التسوية")
+            story.append(Paragraph(summary_title, arabic_heading_style))
+            
+            summary_text = f"""
+            إجمالي عدد التحققات: {len(verifications)}
+            إجمالي المبلغ: {total_amount:.2f} دج
+            تاريخ إنشاء التقرير: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            """
+            
+            formatted_summary = self.format_arabic_text(summary_text)
+            story.append(Paragraph(formatted_summary, arabic_style))
+            
+            # Build PDF
+            doc.build(story)
+            
+            logger.info(f"Settlement report generated successfully: {file_path}")
+            return file_path
+            
+        except Exception as e:
+            logger.error(f"Error generating settlement report: {e}")
+            return None

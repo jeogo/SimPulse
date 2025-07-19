@@ -5879,3 +5879,240 @@ ACTIVE GROUPS:
 [2025-07-19 20:41:00,826] [INFO] [__main__]      SMS found: 0
 [2025-07-19 20:41:00,826] [INFO] [__main__]      SMS saved: 0
 [2025-07-19 20:41:00,827] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:14:11,258] [INFO] [__main__] SimPulse System initialized
+[2025-07-19 21:14:11,258] [INFO] [__main__] ============================================================
+[2025-07-19 21:14:11,259] [INFO] [__main__] STARTING SIMPULSE MODEM-SIM SYSTEM
+[2025-07-19 21:14:11,259] [INFO] [__main__] ============================================================
+[2025-07-19 21:14:11,259] [INFO] [__main__] SYSTEM INFORMATION
+[2025-07-19 21:14:11,259] [INFO] [__main__]      Database: C:\Users\pc-jeogo\Desktop\SimPulse\data\modem_system.db
+[2025-07-19 21:14:11,259] [INFO] [__main__]      Log file: C:\Users\pc-jeogo\Desktop\SimPulse\data\modem_system.log
+[2025-07-19 21:14:11,259] [INFO] [__main__]      Max COM ports: 999
+[2025-07-19 21:14:11,261] [INFO] [__main__]      Active modems: 2
+[2025-07-19 21:14:11,261] [INFO] [__main__]      Active SIMs: 2
+[2025-07-19 21:14:11,261] [INFO] [__main__]      Active groups: 2
+[2025-07-19 21:14:11,261] [INFO] [__main__]      SIMs needing extraction: 1
+[2025-07-19 21:14:11,261] [INFO] [__main__]      Total SMS messages: 4
+[2025-07-19 21:14:11,261] [INFO] [__main__]      SMS last 24h: 4
+[2025-07-19 21:14:11,261] [INFO] [__main__] [SCAN] Starting modem detection...
+[2025-07-19 21:14:11,262] [INFO] [core.modem_detector] Starting modem detection system (ONE TIME SCAN)
+[2025-07-19 21:14:11,262] [INFO] [core.modem_detector] Starting full COM port scan
+[2025-07-19 21:14:11,262] [INFO] [core.modem_detector] Scanning COM ports 1-999
+[2025-07-19 21:14:11,262] [INFO] [__main__] [SYSTEM] Main loop started
+[2025-07-19 21:14:11,898] [INFO] [core.modem_detector] Found 5 available COM ports
+[2025-07-19 21:14:11,898] [INFO] [core.port_filter] Filtering 5 available ports
+[2025-07-19 21:14:17,683] [INFO] [core.port_filter] Valid modem port found: COM21
+[2025-07-19 21:14:23,341] [INFO] [core.port_filter] Valid modem port found: COM24
+[2025-07-19 21:14:23,758] [INFO] [core.port_filter] Found ZTE Proprietary Modem: COM21 - zte proprietary usb modem #2
+[2025-07-19 21:14:23,767] [INFO] [core.port_filter] ZTE Proprietary Modem detected: COM21 - zte proprietary usb modem #2
+[2025-07-19 21:14:23,774] [INFO] [core.port_filter] Found ZTE NMEA Device (USSD capable): COM24 - zte nmea device (com24)
+[2025-07-19 21:14:23,783] [INFO] [core.port_filter] ZTE NMEA Device detected (USSD capable): COM24 - zte nmea device (com24)
+[2025-07-19 21:14:23,791] [INFO] [core.port_filter] ZTE NMEA Device detected (USSD capable): COM24 - zte nmea device (com24)
+[2025-07-19 21:14:23,791] [INFO] [core.port_filter] Found 1 unique modems across 2 ports
+[2025-07-19 21:14:23,791] [INFO] [core.modem_detector] Found 1 valid modems
+[2025-07-19 21:14:23,792] [INFO] [core.modem_detector] Updating modem 865559029620787 port from None to COM24
+[2025-07-19 21:14:23,792] [INFO] [core.modem_detector] Modem TEST123456789IMEI appears to be removed
+[2025-07-19 21:14:23,792] [INFO] [__main__] 📱 [MODEM] Removed: IMEI TEST123456789IMEI
+[2025-07-19 21:14:23,792] [INFO] [__main__] [SCAN] ✅ Modem scan completed
+[2025-07-19 21:14:23,794] [INFO] [__main__] [SCAN] Found 2 modems, starting sequential SIM extraction
+[2025-07-19 21:14:23,794] [INFO] [__main__] [PROCESS] Processing modem 1/2: IMEI 865559029620787
+[2025-07-19 21:14:23,795] [INFO] [__main__] [PROCESS] SIM exists for IMEI 865559029620787 - RE-EXTRACTING fresh data
+[2025-07-19 21:14:23,795] [INFO] [__main__] 🔍 [SIM] Starting info extraction for IMEI 865559029620787 on port COM24
+[2025-07-19 21:14:23,796] [INFO] [core.sim_manager] 🔄 Starting sequential SIM extraction for IMEI 865559029620787 on port COM24
+[2025-07-19 21:14:23,796] [INFO] [core.sim_manager] 📱 IMEI 865559029620787: Attempt 1/3 - Connecting to port COM24
+[2025-07-19 21:14:23,798] [INFO] [core.sim_manager] ✅ IMEI 865559029620787: Connected successfully to port COM24
+[2025-07-19 21:14:24,001] [INFO] [core.sim_manager] 📞 IMEI 865559029620787: SIM is ready on port COM24, starting USSD extraction
+[2025-07-19 21:14:24,001] [INFO] [core.sim_manager] 📱 IMEI 865559029620787: Step 1/2 - Extracting phone number with *101#
+[2025-07-19 21:14:26,006] [INFO] [core.sim_manager] Phone number raw response: 
++CUSD: 0,"004300680065007200200063006C00690065006E0074002C00200076006F0074007200650020006E0075006D00E90072006F00200065007300740020003A0020003200310033003600370034003100360038003000330034",72
+
+[2025-07-19 21:14:26,007] [INFO] [core.sim_manager] 📱 Phone number decoded: Cher client, votre numéro est : 213674168034
+[2025-07-19 21:14:26,008] [INFO] [core.sim_manager] 📱 Phone number extracted: 213674168034
+[2025-07-19 21:14:26,009] [INFO] [core.sim_manager] 📱 IMEI 865559029620787: Phone number: 213674168034
+[2025-07-19 21:14:26,009] [INFO] [core.sim_manager] ⏱️  IMEI 865559029620787: Waiting 3 seconds between USSD commands...
+[2025-07-19 21:14:29,010] [INFO] [core.sim_manager] 💰 IMEI 865559029620787: Step 2/2 - Extracting balance with *222#
+[2025-07-19 21:14:30,280] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:14:30,280] [INFO] [__main__]      Uptime: 0:00:19.021014
+[2025-07-19 21:14:30,281] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:14:30,281] [INFO] [__main__]      Extractions: 0
+[2025-07-19 21:14:30,281] [INFO] [__main__]      SMS polling: Inactive
+[2025-07-19 21:14:31,216] [INFO] [core.sim_manager] Balance raw response: 
++CUSD: 0,"00530061006D0061002C00200053006F006C00640065002000320034002C0030003300440041",72
+
+[2025-07-19 21:14:31,217] [INFO] [core.sim_manager] 💰 Balance decoded: Sama, Solde 24,03DA
+[2025-07-19 21:14:31,217] [INFO] [core.sim_manager] 💰 Balance amount from USSD: 24.03
+[2025-07-19 21:14:31,218] [INFO] [core.sim_manager] 💰 IMEI 865559029620787: Balance: 24.03
+[2025-07-19 21:14:31,218] [INFO] [core.sim_manager] 💾 IMEI 865559029620787: Safely saving to database...
+[2025-07-19 21:14:31,219] [INFO] [core.sim_manager] 💾 IMEI 865559029620787: Current DB - Phone: 213674168034, Balance: 24.03
+[2025-07-19 21:14:31,219] [INFO] [core.sim_manager] 💾 IMEI 865559029620787: New data - Phone: 213674168034, Balance: 24.03
+[2025-07-19 21:14:31,220] [INFO] [core.sim_manager] 💾 IMEI 865559029620787: Final save - Phone: 213674168034, Balance: 24.03
+[2025-07-19 21:14:31,221] [INFO] [core.database] SIM 1 update - Current: Phone=213674168034, Balance=24.03
+[2025-07-19 21:14:31,221] [INFO] [core.database] SIM 1 update - New: Phone=213674168034, Balance=24.03
+[2025-07-19 21:14:31,221] [INFO] [core.database] SIM 1 update - Final: Phone=213674168034, Balance=24.03
+[2025-07-19 21:14:31,223] [INFO] [core.database] ✅ Updated SIM 1 safely - Phone: 213674168034, Balance: 24.03
+[2025-07-19 21:14:31,230] [INFO] [core.sim_manager] ✅ IMEI 865559029620787: SIM info updated successfully
+[2025-07-19 21:14:31,230] [INFO] [core.sim_manager] ✅ IMEI 865559029620787: Sequential extraction completed successfully on port COM24
+[2025-07-19 21:14:31,232] [INFO] [__main__] 📞 [SIM] Info extracted for IMEI 865559029620787
+[2025-07-19 21:14:31,232] [INFO] [__main__]      Phone: 213674168034
+[2025-07-19 21:14:31,232] [INFO] [__main__]      Balance: 24.03
+[2025-07-19 21:14:31,234] [INFO] [core.group_manager] 📁 Modem 865559029620787 already has group: group 1
+[2025-07-19 21:14:31,235] [INFO] [__main__] 📁 [GROUP] Auto-created group for IMEI 865559029620787
+[2025-07-19 21:14:31,235] [INFO] [__main__] ✅ [SIM] Registration completed for IMEI 865559029620787
+[2025-07-19 21:14:31,236] [INFO] [core.sim_manager] ✅ IMEI 865559029620787: SIM successfully registered with complete info
+[2025-07-19 21:14:31,236] [INFO] [core.sim_manager] 🔓 IMEI 865559029620787: Releasing port COM24 and waiting 2 seconds...
+[2025-07-19 21:14:33,238] [ERROR] [__main__] ❌ [SIM] Extraction failed for IMEI 865559029620787
+[2025-07-19 21:14:33,239] [INFO] [__main__] ⏱️  [PROCESS] Waiting 3 seconds before next modem...
+[2025-07-19 21:14:36,240] [INFO] [__main__] [PROCESS] Processing modem 2/2: IMEI TEST123456789IMEI
+[2025-07-19 21:14:36,243] [INFO] [__main__] [PROCESS] SIM exists for IMEI TEST123456789IMEI - RE-EXTRACTING fresh data
+[2025-07-19 21:14:36,244] [WARNING] [__main__] Modem TEST123456789IMEI not in known modems
+[2025-07-19 21:14:36,244] [ERROR] [__main__] ❌ [SIM] No working port found for IMEI TEST123456789IMEI
+[2025-07-19 21:14:36,245] [INFO] [__main__] ⏱️  [PROCESS] Waiting 3 seconds before next modem...
+[2025-07-19 21:14:39,246] [INFO] [__main__] [PROCESS] ✅ All modems processed
+[2025-07-19 21:14:39,246] [INFO] [__main__] [SMS] 🔄 Starting SMS polling system...
+[2025-07-19 21:14:39,247] [INFO] [core.sms_poller] 🔄 Starting SMS polling system
+[2025-07-19 21:14:39,248] [INFO] [core.sms_poller] 📱 SMS polling worker started
+[2025-07-19 21:14:39,248] [INFO] [__main__] [SMS] ✅ SMS polling started
+[2025-07-19 21:14:39,249] [INFO] [__main__] [GROUP] 📁 Printing group summary...
+[2025-07-19 21:14:39,252] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:14:39,252] [INFO] [core.sms_poller] 📱 Active SIMs updated: 1 SIMs available
+[2025-07-19 21:14:39,253] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:14:39,256] [INFO] [core.group_manager] ==================================================
+[2025-07-19 21:14:39,256] [INFO] [core.group_manager] GROUP MANAGER SUMMARY
+[2025-07-19 21:14:39,256] [INFO] [core.group_manager] ==================================================
+[2025-07-19 21:14:39,257] [INFO] [core.group_manager] Total Groups: 2
+[2025-07-19 21:14:39,257] [INFO] [core.group_manager] Groups with SIM Info: 1
+[2025-07-19 21:14:39,258] [INFO] [core.group_manager] Groups without SIM Info: 1
+[2025-07-19 21:14:39,258] [INFO] [core.group_manager] Auto-create: Enabled
+[2025-07-19 21:14:39,259] [INFO] [core.group_manager] 
+ACTIVE GROUPS:
+[2025-07-19 21:14:39,259] [INFO] [core.group_manager]   group 1 -> IMEI: 865559029620787 | SIM: 213674168034 | 24.03
+[2025-07-19 21:14:39,259] [INFO] [core.group_manager]   GROUP_89IMEI -> IMEI: TEST123456789IMEI | SIM: 0123456789 | 1000.00
+[2025-07-19 21:14:39,260] [INFO] [core.group_manager] ==================================================
+[2025-07-19 21:14:42,273] [INFO] [core.sms_poller] 🔄 Completed polling cycle 1
+[2025-07-19 21:14:42,275] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:15:00,295] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:15:00,296] [INFO] [__main__]      Uptime: 0:00:49.035527
+[2025-07-19 21:15:00,297] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:15:00,301] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:15:00,303] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:15:00,307] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:15:00,308] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:15:00,309] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:15:12,277] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:15:12,278] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:15:15,234] [INFO] [core.sms_poller] 🔄 Completed polling cycle 2
+[2025-07-19 21:15:15,235] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:15:30,368] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:15:30,369] [INFO] [__main__]      Uptime: 0:01:19.108463
+[2025-07-19 21:15:30,370] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:15:30,370] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:15:30,371] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:15:30,372] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:15:30,373] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:15:30,374] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:15:45,240] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:15:45,241] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:15:48,265] [INFO] [core.sms_poller] 🔄 Completed polling cycle 3
+[2025-07-19 21:15:48,266] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:16:00,389] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:16:00,389] [INFO] [__main__]      Uptime: 0:01:49.129707
+[2025-07-19 21:16:00,389] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:16:00,389] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:16:00,390] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:16:00,390] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:16:00,390] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:16:00,390] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:16:18,268] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:16:18,268] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:16:21,287] [INFO] [core.sms_poller] 🔄 Completed polling cycle 4
+[2025-07-19 21:16:21,288] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:16:30,403] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:16:30,403] [INFO] [__main__]      Uptime: 0:02:19.143991
+[2025-07-19 21:16:30,404] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:16:30,404] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:16:30,404] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:16:30,404] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:16:30,405] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:16:30,405] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:16:51,290] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:16:51,290] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:16:54,310] [INFO] [core.sms_poller] 🔄 Completed polling cycle 5
+[2025-07-19 21:16:54,311] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:17:00,416] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:17:00,416] [INFO] [__main__]      Uptime: 0:02:49.156787
+[2025-07-19 21:17:00,417] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:17:00,418] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:17:00,418] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:17:00,418] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:17:00,419] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:17:00,419] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:17:24,316] [WARNING] [core.sms_poller] SIM 3 (IMEI TEST123456789IMEI) - no port info available
+[2025-07-19 21:17:24,317] [INFO] [core.sms_poller] 📨 Polling SIM 1 (IMEI 620787, Phone 213674168034) on port COM24
+[2025-07-19 21:17:27,305] [INFO] [core.sms_poller] 🔄 Completed polling cycle 6
+[2025-07-19 21:17:27,305] [INFO] [core.sms_poller] 📊 Stats: Found=0, Saved=0, Deleted=0, Recharge=0, Balance Checks=0
+[2025-07-19 21:17:30,478] [INFO] [__main__] 📈 STATUS UPDATE
+[2025-07-19 21:17:30,478] [INFO] [__main__]      Uptime: 0:03:19.219088
+[2025-07-19 21:17:30,479] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:17:30,479] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:17:30,479] [INFO] [__main__]      SMS polling: Active (1 SIMs)
+[2025-07-19 21:17:30,479] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:17:30,479] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:17:30,480] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:17:35,465] [INFO] [__main__] Signal 2 received, initiating shutdown
+[2025-07-19 21:17:35,466] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:35,467] [INFO] [__main__] SHUTTING DOWN SIMPULSE SYSTEM
+[2025-07-19 21:17:35,467] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:35,468] [INFO] [__main__] [SHUTDOWN] Stopping SMS polling...
+[2025-07-19 21:17:35,468] [INFO] [core.sms_poller] ⏹️  Stopping SMS polling
+[2025-07-19 21:17:45,480] [INFO] [__main__] Signal 2 received, initiating shutdown
+[2025-07-19 21:17:45,481] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:45,481] [INFO] [__main__] SHUTTING DOWN SIMPULSE SYSTEM
+[2025-07-19 21:17:45,481] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:45,481] [INFO] [__main__] [SHUTDOWN] Stopping SMS polling...
+[2025-07-19 21:17:45,482] [INFO] [__main__] [SHUTDOWN] Stopping modem detection...
+[2025-07-19 21:17:45,482] [INFO] [core.modem_detector] Stopping modem detection system
+[2025-07-19 21:17:45,482] [INFO] [__main__] [SHUTDOWN] Cleaning up orphaned groups...
+[2025-07-19 21:17:45,483] [INFO] [__main__] FINAL STATISTICS
+[2025-07-19 21:17:45,484] [INFO] [__main__]      Total runtime: 0:03:34.224490
+[2025-07-19 21:17:45,484] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:17:45,484] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:17:45,484] [INFO] [__main__]      SMS polls: 6
+[2025-07-19 21:17:45,484] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:17:45,485] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:17:45,485] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:17:45,486] [INFO] [__main__]      Total groups: 2
+[2025-07-19 21:17:45,486] [INFO] [__main__]      Groups with SIM info: 1
+[2025-07-19 21:17:45,486] [INFO] [__main__] SimPulse system shutdown complete
+[2025-07-19 21:17:45,486] [INFO] [core.sms_poller] ✅ SMS polling stopped
+[2025-07-19 21:17:45,486] [INFO] [__main__] [SHUTDOWN] Stopping modem detection...
+[2025-07-19 21:17:45,487] [INFO] [core.modem_detector] Stopping modem detection system
+[2025-07-19 21:17:45,487] [INFO] [__main__] [SHUTDOWN] Cleaning up orphaned groups...
+[2025-07-19 21:17:45,488] [INFO] [__main__] FINAL STATISTICS
+[2025-07-19 21:17:45,488] [INFO] [__main__]      Total runtime: 0:03:34.229032
+[2025-07-19 21:17:45,488] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:17:45,488] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:17:45,489] [INFO] [__main__]      SMS polls: 6
+[2025-07-19 21:17:45,489] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:17:45,489] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:17:45,489] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:17:45,490] [INFO] [__main__]      Total groups: 2
+[2025-07-19 21:17:45,490] [INFO] [__main__]      Groups with SIM info: 1
+[2025-07-19 21:17:45,491] [INFO] [__main__] SimPulse system shutdown complete
+[2025-07-19 21:17:45,491] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:45,491] [INFO] [__main__] SHUTTING DOWN SIMPULSE SYSTEM
+[2025-07-19 21:17:45,491] [INFO] [__main__] ============================================================
+[2025-07-19 21:17:45,491] [INFO] [__main__] [SHUTDOWN] Stopping SMS polling...
+[2025-07-19 21:17:45,492] [INFO] [__main__] [SHUTDOWN] Stopping modem detection...
+[2025-07-19 21:17:45,492] [INFO] [core.modem_detector] Stopping modem detection system
+[2025-07-19 21:17:45,492] [INFO] [__main__] [SHUTDOWN] Cleaning up orphaned groups...
+[2025-07-19 21:17:45,493] [INFO] [__main__] FINAL STATISTICS
+[2025-07-19 21:17:45,493] [INFO] [__main__]      Total runtime: 0:03:34.233948
+[2025-07-19 21:17:45,493] [INFO] [__main__]      Modems detected: 0
+[2025-07-19 21:17:45,493] [INFO] [__main__]      Extractions: 1
+[2025-07-19 21:17:45,494] [INFO] [__main__]      SMS polls: 6
+[2025-07-19 21:17:45,494] [INFO] [__main__]      SMS found: 0
+[2025-07-19 21:17:45,494] [INFO] [__main__]      SMS saved: 0
+[2025-07-19 21:17:45,494] [INFO] [__main__]      SMS deleted: 0
+[2025-07-19 21:17:45,495] [INFO] [__main__]      Total groups: 2
+[2025-07-19 21:17:45,495] [INFO] [__main__]      Groups with SIM info: 1
+[2025-07-19 21:17:45,496] [INFO] [__main__] SimPulse system shutdown complete
+[2025-07-19 21:17:45,496] [INFO] [__main__] System terminated

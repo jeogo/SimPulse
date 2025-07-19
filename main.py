@@ -21,6 +21,7 @@ from core.modem_detector import modem_detector
 from core.sim_manager import sim_manager
 from core.sms_poller import sms_poller
 from core.group_manager import group_manager
+from telegram_bot.bot import SimPulseTelegramBot
 
 # Setup logging
 logging.basicConfig(
@@ -44,6 +45,9 @@ class SimPulseSystem:
             'total_modems_detected': 0,
             'extraction_count': 0
         }
+        
+        # Initialize Telegram Bot
+        self.telegram_bot = SimPulseTelegramBot()
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -84,6 +88,10 @@ class SimPulseSystem:
             # Print system info
             self._print_system_info()
             
+            # Start Telegram Bot
+            logger.info("[BOT] Starting Telegram Bot...")
+            self.telegram_bot.start_bot()
+            
             # Start modem detection
             logger.info("[SCAN] Starting modem detection...")
             modem_detector.start_detection()
@@ -104,6 +112,11 @@ class SimPulseSystem:
             
             self.running = False
             self.shutdown_event.set()
+            
+            # Stop Telegram Bot
+            logger.info("[SHUTDOWN] Stopping Telegram Bot...")
+            if hasattr(self, 'telegram_bot'):
+                self.telegram_bot.stop_bot()
             
             # Stop SMS polling
             logger.info("[SHUTDOWN] Stopping SMS polling...")

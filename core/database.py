@@ -863,5 +863,20 @@ class DatabaseManager:
             logger.error(f"Failed to update user group: {e}")
             return False
 
+    def update_settlement_pdf_path(self, settlement_id: int, pdf_path: str) -> bool:
+        """Update settlement with PDF file path"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    "UPDATE user_settlements SET pdf_file_path = ? WHERE id = ?",
+                    (pdf_path, settlement_id)
+                )
+                conn.commit()
+                logger.info(f"Updated settlement {settlement_id} with PDF path: {pdf_path}")
+                return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to update settlement PDF path: {e}")
+            return False
+
 # Global database instance
 db = DatabaseManager()

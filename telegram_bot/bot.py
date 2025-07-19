@@ -7,6 +7,7 @@ import asyncio
 import logging
 import sys
 import os
+import threading
 from typing import Dict, Any
 from datetime import datetime
 
@@ -57,6 +58,7 @@ class SimPulseTelegramBot:
         # Avoid duplicate states
         if not self.navigation_history[user_id] or self.navigation_history[user_id][-1] != current_state:
             self.navigation_history[user_id].append(current_state)
+            logger.debug(f"User {user_id} navigation: pushed '{current_state}' -> stack: {self.navigation_history[user_id]}")
             
         # Limit history size to prevent memory issues
         if len(self.navigation_history[user_id]) > 10:
@@ -67,9 +69,15 @@ class SimPulseTelegramBot:
         if user_id in self.navigation_history and self.navigation_history[user_id]:
             # Remove current state
             if len(self.navigation_history[user_id]) > 1:
-                self.navigation_history[user_id].pop()
-                return self.navigation_history[user_id][-1]
-        return "main_menu"
+                current_state = self.navigation_history[user_id].pop()
+                previous_state = self.navigation_history[user_id][-1]
+                logger.debug(f"User {user_id} navigation: popped '{current_state}' -> returning to '{previous_state}' -> stack: {self.navigation_history[user_id]}")
+                return previous_state
+        
+        # Fallback: determine appropriate default based on user role
+        default_state = "admin_menu" if self.is_admin(user_id) else "main_menu"
+        logger.debug(f"User {user_id} navigation: no history, fallback to '{default_state}'")
+        return default_state
     
     def clear_navigation(self, user_id: int):
         """Clear navigation history for user"""
@@ -97,11 +105,8 @@ class SimPulseTelegramBot:
         elif last_state == "pending_users":
             await self.show_pending_users_interactive(update, context)
         else:
-            # Default fallback
-            if user_id in config.ADMIN_USER_IDS:
-                await self.show_admin_menu(update, context)
-            else:
-                await self.show_main_menu(update, context)
+            # Default fallback - Use safe navigation
+            await self.safe_navigate_to_default(update, context)
     
     async def handle_back_navigation(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle back navigation with one step back"""
@@ -123,21 +128,35 @@ class SimPulseTelegramBot:
         elif last_state == "pending_users":
             await self.show_pending_users_interactive(update, context)
         else:
-            # Default fallback
-            if user_id in config.ADMIN_USER_IDS:
-                await self.show_admin_menu(update, context)
-            else:
-                await self.show_main_menu(update, context)
+            # Default fallback - Use safe navigation
+            await self.safe_navigate_to_default(update, context)
     
     def is_admin(self, user_id: int) -> bool:
         """Check if user is admin"""
         return user_id in config.ADMIN_TELEGRAM_IDS
+    
+    def get_appropriate_default_menu(self, user_id: int) -> str:
+        """Get appropriate default menu based on user role"""
+        return "admin_menu" if self.is_admin(user_id) else "main_menu"
+    
+    async def safe_navigate_to_default(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Safely navigate to appropriate default menu"""
+        user_id = update.effective_user.id
+        if self.is_admin(user_id):
+            await self.show_admin_menu(update, context)
+            logger.info(f"Admin {user_id} navigated to admin menu (safe default)")
+        else:
+            await self.show_main_menu(update, context)
+            logger.info(f"User {user_id} navigated to main menu (safe default)")
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command - Different behavior for admin vs users"""
         user = update.effective_user
         
         logger.info(f"User {user.id} ({user.first_name}) started the bot")
+        
+        # Clear navigation history on start for fresh session
+        self.clear_navigation(user.id)
         
         # Check if user is admin
         if self.is_admin(user.id):
@@ -402,6 +421,18 @@ class SimPulseTelegramBot:
     
     async def show_admin_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show admin menu with buttons"""
+        user_id = update.effective_user.id
+        
+        # Double-check admin status for security
+        if not self.is_admin(user_id):
+            logger.warning(f"Non-admin user {user_id} attempted to access admin menu")
+            await update.message.reply_text("❌ غير مسموح لك بالوصول لهذه القائمة")
+            await self.show_main_menu(update, context)
+            return
+        
+        # Set navigation state
+        self.push_navigation(user_id, "admin_menu")
+        
         keyboard = [[button] for button in ADMIN_MENU_BUTTONS]
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
@@ -411,6 +442,13 @@ class SimPulseTelegramBot:
         """Handle admin messages"""
         message_text = update.message.text
         user_id = update.effective_user.id
+        
+        # Security check - ensure user is still admin
+        if not self.is_admin(user_id):
+            logger.warning(f"Non-admin user {user_id} attempted admin action: {message_text}")
+            await update.message.reply_text("❌ غير مسموح لك بهذا الإجراء")
+            await self.show_main_menu(update, context)
+            return
         
         if message_text == BUTTON_BACK_ONE_STEP:
             await self.handle_back_button(update, context)
@@ -1497,16 +1535,51 @@ class SimPulseTelegramBot:
                 
                 # Send PDF reports for all settlements
                 for settlement in settlements:
-                    if settlement.get('pdf_file_path') and os.path.exists(settlement['pdf_file_path']):
+                    pdf_sent = False
+                    pdf_path = settlement.get('pdf_file_path')
+                    
+                    # Check if PDF exists, if not create it
+                    if not pdf_path or not os.path.exists(pdf_path):
+                        try:
+                            # Generate PDF for this settlement
+                            logger.info(f"Generating PDF for settlement {settlement['id']}")
+                            
+                            # Get settlement verifications
+                            settlement_verifications = db.get_verifications_by_settlement(settlement['id'])
+                            
+                            if settlement_verifications:
+                                from telegram_bot.utils.pdf_generator import PDFGenerator
+                                pdf_generator = PDFGenerator()
+                                
+                                pdf_path = pdf_generator.generate_settlement_report_sync(
+                                    user_data=selected_user,
+                                    verifications=settlement_verifications,
+                                    settlement_data=settlement
+                                )
+                                
+                                if pdf_path and os.path.exists(pdf_path):
+                                    # Update settlement with PDF path
+                                    db.update_settlement_pdf_path(settlement['id'], pdf_path)
+                                    logger.info(f"Generated and saved PDF for settlement {settlement['id']}")
+                                
+                        except Exception as e:
+                            logger.error(f"Error generating PDF for settlement {settlement['id']}: {e}")
+                    
+                    # Try to send the PDF
+                    if pdf_path and os.path.exists(pdf_path):
                         try:
                             await context.bot.send_document(
                                 chat_id=update.effective_user.id,
-                                document=open(settlement['pdf_file_path'], 'rb'),
+                                document=open(pdf_path, 'rb'),
                                 caption=f"📄 تقرير التسوية #{settlement['id']} - {settlement['settlement_date'][:10]}"
                             )
+                            pdf_sent = True
+                            logger.info(f"Successfully sent PDF for settlement {settlement['id']}")
                         except Exception as e:
                             logger.error(f"Error sending settlement PDF {settlement['id']}: {e}")
-                            message += f"⚠️ لا يمكن إرسال تقرير التسوية #{settlement['id']}\n"
+                    
+                    if not pdf_sent:
+                        message += f"⚠️ لا يمكن إرسال تقرير التسوية #{settlement['id']}\n"
             
             keyboard = [[BUTTON_BACK_ONE_STEP]]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -1781,6 +1854,31 @@ class SimPulseTelegramBot:
             logger.info("Stopping bot...")
         finally:
             await self.application.stop()
+    
+    def start_bot(self):
+        """Start the bot in background thread"""
+        if not config.TELEGRAM_BOT_TOKEN:
+            logger.error("TELEGRAM_BOT_TOKEN not configured!")
+            return
+        
+        def run_bot():
+            try:
+                asyncio.run(self.run())
+            except Exception as e:
+                logger.error(f"Bot error: {e}")
+        
+        self.bot_thread = threading.Thread(target=run_bot, daemon=True)
+        self.bot_thread.start()
+        logger.info("✅ Telegram Bot started in background thread")
+    
+    def stop_bot(self):
+        """Stop the bot"""
+        try:
+            if hasattr(self, 'application') and self.application:
+                # This will trigger the KeyboardInterrupt in run()
+                logger.info("Telegram Bot stopping...")
+        except Exception as e:
+            logger.error(f"Error stopping bot: {e}")
 
 # Global bot instance
 bot = SimPulseTelegramBot()
