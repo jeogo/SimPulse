@@ -1,14 +1,7 @@
-pyserial==3.5
-# Built-in libraries used:
-# sqlite3 - Database operations
-# threading - Multi-threading support
-# time - Time operations
-# re - Regular expressions
-# logging - Logging system
-# binascii - Binary/ASCII conversions
-# codecs - Encoding/decoding
-# signal - Signal handling
-# sys - System operations
-# os - Operating system interface
-# datetime - Date/time operations
-# typing - Type hints
+pyserial
+python-telegram-bot
+python-dateutil
+pytz
+reportlab
+arabic-reshaper
+python-bidi

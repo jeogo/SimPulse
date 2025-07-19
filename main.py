@@ -8,38 +8,21 @@ import os
 import time
 import logging
 import signal
-impor    def _on_modem_detected(self, modem_info: Dict):
-        """Handle modem detection event - DO NOT CREATE SIM YET"""
-        try:
-            imei = modem_info['imei']
-            port = modem_info['port']
-            
-            logger.info(f"📱 [MODEM] Detected: IMEI {imei} on port {port}")
-            self.stats['total_modems_detected'] += 1
-            
-            # DO NOT create SIM record yet - will be created after successful extraction
-            logger.info(f"📱 [MODEM] Modem {imei} registered, will extract info after scan complete")
-            
-        except Exception as e:
-            logger.error(f"Error handling modem detection: {e}")rom datetime import datetime
+import threading
+from datetime import datetime
 from typing import Dict, List
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import (
-    LOG_LEVEL, 
-    LOG_FORMAT, 
-    LOG_FILE,
-    CONSOLE_TIMESTAMPS,
-    CONSOLE_COLORS,
-    GRACEFUL_SHUTDOWN_TIMEOUT
-)
-from database import db
-from modem_detector import modem_detector
-from sim_manager import sim_manager
+from core.config import LOG_LEVEL, LOG_FORMAT, LOG_FILE
+from core.database import db
+from core.modem_detector import modem_detector
+from core.sim_manager import sim_manager
+from core.sms_poller import sms_poller
+from core.group_manager import group_manager
 
-# Configure logging
+# Setup logging
 logging.basicConfig(
     level=LOG_LEVEL,
     format=LOG_FORMAT,
@@ -48,7 +31,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-
 logger = logging.getLogger(__name__)
 
 class SimPulseSystem:
@@ -60,7 +42,6 @@ class SimPulseSystem:
         self.stats = {
             'start_time': None,
             'total_modems_detected': 0,
-            'total_sims_processed': 0,
             'extraction_count': 0
         }
         
@@ -88,13 +69,13 @@ class SimPulseSystem:
             on_extraction_failed=self._on_extraction_failed
         )
         
-        # NO SMS manager callbacks - SMS polling disabled
+        # SMS polling will be started after SIM extraction completes
     
     def start(self):
         """Start the SimPulse system"""
         try:
             logger.info("=" * 60)
-            logger.info("🚀 STARTING SIMPULSE MODEM-SIM SYSTEM")
+            logger.info("STARTING SIMPULSE MODEM-SIM SYSTEM")
             logger.info("=" * 60)
             
             self.running = True
@@ -118,20 +99,30 @@ class SimPulseSystem:
         """Shutdown the SimPulse system"""
         try:
             logger.info("=" * 60)
-            logger.info("🛑 SHUTTING DOWN SIMPULSE SYSTEM")
+            logger.info("SHUTTING DOWN SIMPULSE SYSTEM")
             logger.info("=" * 60)
             
             self.running = False
             self.shutdown_event.set()
             
-            # Stop modem detection only (no SMS polling)
+            # Stop SMS polling
+            logger.info("[SHUTDOWN] Stopping SMS polling...")
+            sms_poller.stop_polling()
+            
+            # Stop modem detection
             logger.info("[SHUTDOWN] Stopping modem detection...")
             modem_detector.stop_detection()
+            
+            # Cleanup groups
+            logger.info("[SHUTDOWN] Cleaning up orphaned groups...")
+            cleaned_count = group_manager.cleanup_orphaned_groups()
+            if cleaned_count > 0:
+                logger.info(f"[SHUTDOWN] Cleaned up {cleaned_count} orphaned groups")
             
             # Print final statistics
             self._print_final_stats()
             
-            logger.info("✅ SimPulse system shutdown complete")
+            logger.info("SimPulse system shutdown complete")
             
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
@@ -174,13 +165,12 @@ class SimPulseSystem:
         """Handle modem detection event - DO NOT CREATE SIM YET"""
         try:
             imei = modem_info['imei']
-            primary_port = modem_info['primary_port']
+            port = modem_info['port']
             
-            logger.info(f"📱 [MODEM] Detected: IMEI {imei} on port {primary_port}")
+            logger.info(f"📱 [MODEM] Detected: IMEI {imei} on port {port}")
             self.stats['total_modems_detected'] += 1
             
-            # DO NOT create SIM record yet - will be created after successful extraction
-            logger.info(f"� [MODEM] Modem {imei} registered, will extract info after scan complete")
+            logger.info(f"📱 [MODEM] Modem {imei} registered, will extract info after scan complete")
             
         except Exception as e:
             logger.error(f"Error handling modem detection: {e}")
@@ -191,7 +181,7 @@ class SimPulseSystem:
             imei = modem_info['imei']
             logger.info(f"📱 [MODEM] Removed: IMEI {imei}")
             
-            # No SMS polling to stop since it's disabled
+            # SMS polling will handle modem removal automatically
             
         except Exception as e:
             logger.error(f"Error handling modem removal: {e}")
@@ -233,59 +223,105 @@ class SimPulseSystem:
             
             logger.info("[PROCESS] ✅ All modems processed")
             
+            # Start SMS polling after all SIM info extraction is complete
+            logger.info("[SMS] 🔄 Starting SMS polling system...")
+            sms_poller.start_polling()
+            logger.info("[SMS] ✅ SMS polling started")
+            
+            # Print group summary after everything is set up
+            logger.info("[GROUP] 📁 Printing group summary...")
+            group_manager.print_group_summary()
+            
         except Exception as e:
             logger.error(f"Error handling scan completion: {e}")
     
     def _extract_sim_info_for_modem(self, modem: Dict, sim_id: int):
         """Extract SIM info for a specific modem"""
         try:
+            # Find the working port for this modem
+            working_port = self._find_working_port(modem['imei'])
+            
+            if not working_port:
+                logger.error(f"❌ [SIM] No working port found for IMEI {modem['imei']}")
+                return
+            
             sim_info = {
                 'imei': modem['imei'],
                 'id': sim_id,
-                'primary_port': modem['primary_port']
+                'port': working_port
             }
             
-            logger.info(f"🔍 [SIM] Starting info extraction for IMEI {modem['imei']}")
+            logger.info(f"🔍 [SIM] Starting info extraction for IMEI {modem['imei']} on port {working_port}")
             
             # Use sequential extraction with proper error handling
             try:
-                sim_manager.extract_sim_info_sequential(sim_info)
-                logger.info(f"✅ [SIM] Extraction completed for IMEI {modem['imei']}")
+                result = sim_manager.extract_sim_info_sequential(sim_info)
+                
+                if result:
+                    logger.info(f"✅ [SIM] Extraction completed for IMEI {modem['imei']}")
+                else:
+                    logger.error(f"❌ [SIM] Extraction failed for IMEI {modem['imei']}")
+                    
             except Exception as e:
                 logger.error(f"❌ [SIM] Extraction failed for IMEI {modem['imei']}: {e}")
-                # Continue with next modem even if this one fails
             
         except Exception as e:
             logger.error(f"Error extracting SIM info for modem {modem['imei']}: {e}")
+    
+    def _find_working_port(self, imei: str) -> str:
+        """Find the working port for a modem by IMEI"""
+        try:
+            # Check if we have the modem in our known modems
+            if imei in modem_detector.known_modems:
+                return modem_detector.known_modems[imei]['port']
+            
+            logger.warning(f"Modem {imei} not in known modems")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error finding working port for IMEI {imei}: {e}")
+            return None
     
     def _on_sim_info_extracted(self, sim_info: Dict):
         """Handle SIM info extraction completion"""
         try:
             imei = sim_info['imei']
-            phone_number = sim_info['phone_number']
-            balance = sim_info['balance']
+            phone_number = sim_info.get('phone_number', '')
+            balance = sim_info.get('balance', '')
             
             logger.info(f"📞 [SIM] Info extracted for IMEI {imei}")
-            logger.info(f"    Phone: {phone_number}")
-            logger.info(f"    Balance: {balance}")
+            logger.info(f"     Phone: {phone_number}")
+            logger.info(f"     Balance: {balance}")
             
             self.stats['extraction_count'] += 1
             
-            # NO SMS POLLING - as requested
-            logger.info(f"✅ [SIM] Registration completed for IMEI {imei} - NO SMS POLLING")
+            # Auto-create group for this modem
+            try:
+                modem = db.get_modem_by_imei(imei)
+                if modem:
+                    group_id = group_manager.auto_create_group_for_modem(modem['id'], imei)
+                    if group_id:
+                        logger.info(f"📁 [GROUP] Auto-created group for IMEI {imei}")
+                    else:
+                        logger.info(f"📁 [GROUP] Group already exists or auto-create disabled for IMEI {imei}")
+                else:
+                    logger.error(f"❌ [GROUP] Could not find modem for IMEI {imei}")
+            except Exception as e:
+                logger.error(f"❌ [GROUP] Failed to create group for IMEI {imei}: {e}")
+            
+            # SMS polling will start after all SIM extractions complete
+            logger.info(f"✅ [SIM] Registration completed for IMEI {imei}")
             
         except Exception as e:
             logger.error(f"Error handling SIM info extraction: {e}")
     
-    def _on_extraction_failed(self, error_info: Dict):
-        """Handle SIM info extraction failure"""
+    def _on_extraction_failed(self, sim_info: Dict):
+        """Handle SIM extraction failure"""
         try:
-            imei = error_info['imei']
-            error = error_info['error']
+            imei = sim_info['imei']
+            error = sim_info.get('error', 'Unknown error')
             
             logger.error(f"❌ [SIM] Extraction failed for IMEI {imei}: {error}")
-            
-            # You might want to implement retry logic here
             
         except Exception as e:
             logger.error(f"Error handling extraction failure: {e}")
@@ -293,17 +329,19 @@ class SimPulseSystem:
     def _print_system_info(self):
         """Print system information"""
         try:
-            logger.info("📊 SYSTEM INFORMATION")
-            logger.info(f"    Database: {db.db_path}")
-            logger.info(f"    Log file: {LOG_FILE}")
-            logger.info(f"    Max COM ports: {modem_detector.max_com_ports}")
-            # SMS polling removed - system only does SIM extraction
+            logger.info("SYSTEM INFORMATION")
+            logger.info(f"     Database: {db.db_path}")
+            logger.info(f"     Log file: {LOG_FILE}")
+            logger.info(f"     Max COM ports: {999}")
             
-            # Database stats
-            db_stats = db.get_system_stats()
-            logger.info(f"    Active modems: {db_stats.get('active_modems', 0)}")
-            logger.info(f"    Active SIMs: {db_stats.get('active_sims', 0)}")
-            logger.info(f"    SIMs needing extraction: {db_stats.get('sims_needing_extraction', 0)}")
+            # Get system stats
+            stats = db.get_system_stats()
+            logger.info(f"     Active modems: {stats.get('active_modems', 0)}")
+            logger.info(f"     Active SIMs: {stats.get('active_sims', 0)}")
+            logger.info(f"     Active groups: {stats.get('active_groups', 0)}")
+            logger.info(f"     SIMs needing extraction: {stats.get('sims_needing_extraction', 0)}")
+            logger.info(f"     Total SMS messages: {stats.get('total_sms', 0)}")
+            logger.info(f"     SMS last 24h: {stats.get('sms_last_24h', 0)}")
             
         except Exception as e:
             logger.error(f"Error printing system info: {e}")
@@ -312,12 +350,21 @@ class SimPulseSystem:
         """Print periodic status update"""
         try:
             uptime = datetime.now() - self.stats['start_time']
-            
             logger.info("📈 STATUS UPDATE")
-            logger.info(f"    Uptime: {uptime}")
-            logger.info(f"    Modems detected: {self.stats['total_modems_detected']}")
-            logger.info(f"    Extractions: {self.stats['extraction_count']}")
-            # SMS polling removed - system only does SIM extraction
+            logger.info(f"     Uptime: {uptime}")
+            logger.info(f"     Modems detected: {self.stats['total_modems_detected']}")
+            logger.info(f"     Extractions: {self.stats['extraction_count']}")
+            
+            # SMS polling status
+            sms_status = sms_poller.get_status()
+            if sms_status['active']:
+                sms_stats = sms_status['stats']
+                logger.info(f"     SMS polling: Active ({sms_status['total_sims']} SIMs)")
+                logger.info(f"     SMS found: {sms_stats['total_sms_found']}")
+                logger.info(f"     SMS saved: {sms_stats['total_sms_saved']}")
+                logger.info(f"     SMS deleted: {sms_stats['total_sms_deleted']}")
+            else:
+                logger.info(f"     SMS polling: Inactive")
             
         except Exception as e:
             logger.error(f"Error printing status update: {e}")
@@ -327,57 +374,46 @@ class SimPulseSystem:
         try:
             if self.stats['start_time']:
                 total_runtime = datetime.now() - self.stats['start_time']
+                logger.info("FINAL STATISTICS")
+                logger.info(f"     Total runtime: {total_runtime}")
+                logger.info(f"     Modems detected: {self.stats['total_modems_detected']}")
+                logger.info(f"     Extractions: {self.stats['extraction_count']}")
                 
-                logger.info("📊 FINAL STATISTICS")
-                logger.info(f"    Total runtime: {total_runtime}")
-                logger.info(f"    Modems detected: {self.stats['total_modems_detected']}")
-                logger.info(f"    SIMs processed: {self.stats['total_sims_processed']}")
-                logger.info(f"    Extractions: {self.stats['extraction_count']}")
-            
+                # Final SMS stats
+                sms_stats = sms_poller.get_stats()
+                logger.info(f"     SMS polls: {sms_stats['total_polls']}")
+                logger.info(f"     SMS found: {sms_stats['total_sms_found']}")
+                logger.info(f"     SMS saved: {sms_stats['total_sms_saved']}")
+                logger.info(f"     SMS deleted: {sms_stats['total_sms_deleted']}")
+                
+                # Final group stats
+                group_stats = group_manager.get_stats()
+                logger.info(f"     Total groups: {group_stats.get('total_groups', 0)}")
+                logger.info(f"     Groups with SIM info: {group_stats.get('groups_with_sim_info', 0)}")
+                
         except Exception as e:
             logger.error(f"Error printing final stats: {e}")
     
     def _perform_maintenance(self):
         """Perform periodic maintenance tasks"""
         try:
-            # Run maintenance every 5 minutes
-            if int(time.time()) % 300 == 0:
-                logger.debug("Running maintenance tasks...")
-                
-                # Clean up old SMS (optional)
-                # db.cleanup_old_sms(30)
-                
-                # Check for failed extractions and potentially retry
-                # (You can implement this based on your needs)
+            # Placeholder for future maintenance tasks
+            if int(time.time()) % 1800 == 0:  # Every 30 minutes
+                pass
                 
         except Exception as e:
-            logger.error(f"Error in maintenance: {e}")
-    
-    def get_system_status(self) -> Dict:
-        """Get current system status"""
-        try:
-            return {
-                'running': self.running,
-                'stats': self.stats.copy(),
-                'modems': modem_detector.get_known_modems(),
-                'extractions': sim_manager.get_all_extraction_status(),
-                'database': db.get_system_stats()
-            }
-        except Exception as e:
-            logger.error(f"Error getting system status: {e}")
-            return {}
+            logger.error(f"Error performing maintenance: {e}")
 
 def main():
     """Main entry point"""
     try:
-        # Create and start system
         system = SimPulseSystem()
         system.start()
         
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
     except Exception as e:
-        logger.error(f"System error: {e}")
+        logger.error(f"Fatal error: {e}")
     finally:
         logger.info("System terminated")
 
