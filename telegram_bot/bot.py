@@ -16,12 +16,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.error import NetworkError, BadRequest, Forbidden, TelegramError
 
 import core.config as config
 from core.database import db
 from core.group_manager import group_manager
 from telegram_bot.messages import *
 from telegram_bot.services.settlement_service import SettlementService
+from telegram_bot.services.admin_service import AdminService
+from telegram_bot.services.balance_service import balance_service
 from telegram_bot.handlers.verification import VerificationHandlers, WAITING_FOR_AMOUNT, WAITING_FOR_DATE, WAITING_FOR_TIME, CONFIRM_VERIFICATION
 
 # Setup logging
@@ -40,6 +43,11 @@ WAITING_FOR_ADMIN_MESSAGE = range(5, 6)
 # Group management states
 WAITING_FOR_GROUP_NAME = range(6, 7)
 
+# Pagination constants
+USERS_PER_PAGE = 8  # Show 8 users per page for better UI
+MAX_BUTTON_TEXT_LENGTH = 45  # Truncate long user names for buttons
+GROUPS_PER_PAGE = 6  # Show 6 groups per page
+
 class SimPulseTelegramBot:
     """Main Telegram Bot class"""
     
@@ -49,6 +57,7 @@ class SimPulseTelegramBot:
         self.navigation_history = {}  # Store navigation history for each user
         self.settlement_service = SettlementService()
         self.verification_handlers = VerificationHandlers(self)
+        self.admin_service = AdminService(self)
     
     def push_navigation(self, user_id: int, current_state: str):
         """Push current state to navigation history"""
@@ -105,6 +114,111 @@ class SimPulseTelegramBot:
                     self.navigation_history[user_id].append("admin_menu")
             else:
                 self.navigation_history[user_id] = ["admin_menu"]
+
+    # ========================================================================
+    # PAGINATION HELPER FUNCTIONS
+    # ========================================================================
+    
+    def calculate_pagination(self, total_items: int, items_per_page: int = USERS_PER_PAGE) -> dict:
+        """Calculate pagination info"""
+        if total_items == 0:
+            return {
+                'total_pages': 0,
+                'items_per_page': items_per_page,
+                'total_items': 0
+            }
+        
+        total_pages = (total_items + items_per_page - 1) // items_per_page
+        return {
+            'total_pages': total_pages,
+            'items_per_page': items_per_page,
+            'total_items': total_items
+        }
+    
+    def get_page_items(self, items: list, page: int, items_per_page: int = USERS_PER_PAGE) -> list:
+        """Get items for specific page"""
+        start_idx = (page - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        return items[start_idx:end_idx]
+    
+    def create_pagination_buttons(self, current_page: int, total_pages: int) -> list:
+        """Create pagination navigation buttons"""
+        buttons = []
+        
+        if total_pages <= 1:
+            return buttons
+        
+        nav_row = []
+        
+        # Previous button
+        if current_page > 1:
+            nav_row.append("◀️ السابق")
+        
+        # Page info
+        nav_row.append(f"🔢 {current_page} من {total_pages}")
+        
+        # Next button  
+        if current_page < total_pages:
+            nav_row.append("التالي ▶️")
+        
+        if nav_row:
+            buttons.append(nav_row)
+        
+        return buttons
+    
+    def truncate_button_text(self, text: str, max_length: int = MAX_BUTTON_TEXT_LENGTH) -> str:
+        """Truncate button text if too long"""
+        if len(text) <= max_length:
+            return text
+        return text[:max_length-3] + "..."
+
+    # ========================================================================
+    # PAGINATION NAVIGATION HANDLERS
+    # ========================================================================
+    
+    async def handle_pagination_previous(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle previous page navigation"""
+        user_id = update.effective_user.id
+        
+        # Get current navigation state to determine which list we're paginating
+        if user_id in self.navigation_history and self.navigation_history[user_id]:
+            current_state = self.navigation_history[user_id][-1]
+            
+            if current_state == "pending_users":
+                current_page = context.user_data.get('pending_users_page', 1)
+                if current_page > 1:
+                    context.user_data['pending_users_page'] = current_page - 1
+                await self.show_pending_users_interactive(update, context)
+                
+            elif current_state == "users_list":
+                current_page = context.user_data.get('all_users_page', 1)
+                if current_page > 1:
+                    context.user_data['all_users_page'] = current_page - 1
+                await self.show_all_users_interactive(update, context)
+    
+    async def handle_pagination_next(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle next page navigation"""
+        user_id = update.effective_user.id
+        
+        # Get current navigation state to determine which list we're paginating
+        if user_id in self.navigation_history and self.navigation_history[user_id]:
+            current_state = self.navigation_history[user_id][-1]
+            
+            if current_state == "pending_users":
+                pending_users = db.get_pending_telegram_users()
+                total_pages = self.calculate_pagination(len(pending_users))['total_pages']
+                current_page = context.user_data.get('pending_users_page', 1)
+                if current_page < total_pages:
+                    context.user_data['pending_users_page'] = current_page + 1
+                await self.show_pending_users_interactive(update, context)
+                
+            elif current_state == "users_list":
+                all_users = db.get_all_telegram_users()
+                total_pages = self.calculate_pagination(len(all_users))['total_pages']
+                current_page = context.user_data.get('all_users_page', 1)
+                if current_page < total_pages:
+                    context.user_data['all_users_page'] = current_page + 1
+                await self.show_all_users_interactive(update, context)
     
     async def handle_back_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle back button navigation"""
@@ -340,50 +454,157 @@ class SimPulseTelegramBot:
         elif message_text == "💰 التحقق من الرصيد":
             # This will be handled by the ConversationHandler
             pass
+        elif message_text == BUTTON_CHECK_BALANCE:
+            await self.handle_user_balance_check(update, context)
         elif message_text == "📞 التواصل مع المشرف":
-            # Start contact admin conversation manually
-            context.user_data['state'] = 'contacting_admin'
-            await update.message.reply_text(
-                CONTACT_ADMIN_MESSAGE,
-                reply_markup=ReplyKeyboardRemove()
-            )
-        elif context.user_data.get('state') == 'contacting_admin':
-            # Handle the admin contact message
-            await self.handle_admin_contact_message(update, context)
+            # This will be handled by the contact_admin_handler ConversationHandler
+            pass
         else:
             # Show main menu if unknown command
             await self.show_main_menu(update, context)
     
     async def show_profile(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show user profile information"""
-        user_id = update.effective_user.id
-        user_data = db.get_telegram_user_by_id(user_id)
-        
-        if not user_data:
-            await update.message.reply_text(ERROR_NOT_REGISTERED)
-            return
-        
-        # Get SIM info if available
-        sim_info = db.get_user_sim_by_telegram_id(user_id)
-        
-        profile_text = PROFILE_INFO.format(
-            name=user_data['full_name'],
-            phone=user_data['phone_number'],
-            group_name=sim_info['group_name'] if sim_info else "غير محدد",
-            sim_number=sim_info['phone_number'] if sim_info else "غير متصل",
-            verified_balance=user_data.get('verified_balance', 0.0),
-            registration_date=user_data['created_at'][:10],
-            last_verification="لم يتم بعد",
-            status="معتمد" if user_data['status'] == 'approved' else user_data['status']
-        )
-        
-        await update.message.reply_text(profile_text)
+        try:
+            user_id = update.effective_user.id
+            user_data = db.get_telegram_user_by_id(user_id)
+            
+            if not user_data:
+                await self._safe_reply(update, ERROR_NOT_REGISTERED)
+                return
+            
+            # Get SIM info if available
+            sim_info = db.get_user_sim_by_telegram_id(user_id)
+            
+            profile_text = PROFILE_INFO.format(
+                name=user_data['full_name'],
+                phone=user_data['phone_number'],
+                group_name=sim_info['group_name'] if sim_info else "غير محدد",
+                sim_number=sim_info['phone_number'] if sim_info else "غير متصل",
+                verified_balance=user_data.get('verified_balance', 0.0),
+                registration_date=user_data['created_at'][:10],
+                last_verification="لم يتم بعد",
+                status="معتمد" if user_data['status'] == 'approved' else user_data['status']
+            )
+            
+            await self._safe_reply(update, profile_text)
+            
+        except Exception as e:
+            logger.error(f"Error in show_profile: {e}")
+            await self._safe_reply(update, "❌ حدث خطأ في عرض الملف الشخصي. الرجاء المحاولة لاحقاً.")
+    
+    async def handle_user_balance_check(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """معالج فحص الرصيد للمستخدمين"""
+        try:
+            user_id = update.effective_user.id
+            logger.info(f"🔍 User {user_id} requested balance check")
+            
+            # Send processing message
+            processing_msg = await update.message.reply_text(BALANCE_CHECK_PROCESSING)
+            
+            # Check balance via service
+            result = await balance_service.check_user_balance(user_id)
+            
+            # Delete processing message
+            try:
+                await processing_msg.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete processing message: {e}")
+            
+            # Send result
+            if result['success']:
+                await self._safe_reply(update, 
+                    BALANCE_CHECK_SUCCESS.format(**result['data'])
+                )
+                logger.info(f"✅ Balance check successful for user {user_id}")
+            else:
+                await self._safe_reply(update, result.get('message', BALANCE_CHECK_FAILED))
+                logger.warning(f"❌ Balance check failed for user {user_id}")
+                
+        except Exception as e:
+            logger.error(f"Error in handle_user_balance_check: {e}")
+            # Try to delete processing message if it exists
+            try:
+                if 'processing_msg' in locals():
+                    await processing_msg.delete()
+            except:
+                pass
+            await self._safe_reply(update, BALANCE_CHECK_FAILED)
+    
+    async def _safe_reply(self, update: Update, text: str, reply_markup=None):
+        """Safely send a reply message with comprehensive error handling"""
+        try:
+            # Check if update and message exist
+            if not update or not hasattr(update, 'message') or not update.message:
+                logger.warning("Invalid update object for reply")
+                return False
+                
+            # Check if the bot and application are still running
+            if not self.application or not self.application.bot:
+                logger.warning("Bot application not available, cannot send message")
+                return False
+            
+            # Check if the event loop is available and not closed
+            try:
+                current_loop = asyncio.get_running_loop()
+                if current_loop.is_closed():
+                    logger.error("Current event loop is closed - cannot send reply")
+                    return False
+            except RuntimeError:
+                # No running event loop
+                logger.error("No running event loop available for reply")
+                return False
+                
+            # Try to send the message
+            await update.message.reply_text(text, reply_markup=reply_markup)
+            return True
+            
+        except NetworkError as e:
+            logger.warning(f"Network error during reply: {e}")
+            return False
+        except BadRequest as e:
+            logger.warning(f"Bad request during reply: {e}")
+            return False
+        except Forbidden as e:
+            logger.warning(f"Forbidden error during reply (user may have blocked bot): {e}")
+            return False
+        except TelegramError as e:
+            logger.error(f"Telegram API error during reply: {e}")
+            return False
+        except RuntimeError as e:
+            if "event loop is closed" in str(e).lower():
+                logger.error("Event loop closed during reply attempt")
+            else:
+                logger.error(f"Runtime error during reply: {e}")
+            return False
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Handle specific error types
+            if "event loop is closed" in error_msg:
+                logger.error(f"Event loop closed error: {e}")
+                
+            elif "network" in error_msg or "connection" in error_msg:
+                logger.error(f"Network error in _safe_reply: {e}")
+                
+            elif "rate" in error_msg or "flood" in error_msg:
+                logger.error(f"Rate limit error in _safe_reply: {e}")
+                # Could implement retry logic here
+                
+            else:
+                logger.error(f"Unknown error in _safe_reply: {e}")
+                
+            return False
     
     async def show_contact_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show contact admin message and start conversation"""
+        # Create keyboard with cancel button
+        keyboard = [[button] for button in CONTACT_ADMIN_BUTTONS]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        
         await update.message.reply_text(
             CONTACT_ADMIN_MESSAGE,
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=reply_markup
         )
         return WAITING_FOR_ADMIN_MESSAGE
     
@@ -392,9 +613,20 @@ class SimPulseTelegramBot:
         user = update.effective_user
         user_message = update.message.text.strip()
         
+        # Check if user wants to cancel
+        if user_message == "❌ إلغاء":
+            await update.message.reply_text(
+                CONTACT_ADMIN_CANCELLED,
+                reply_markup=ReplyKeyboardRemove()
+            )
+            # Clear state and return to main menu
+            context.user_data.clear()
+            await self.show_main_menu(update, context)
+            return ConversationHandler.END
+        
         if not user_message:
             await update.message.reply_text("❌ الرجاء إدخال رسالة صحيحة")
-            return
+            return WAITING_FOR_ADMIN_MESSAGE
         
         try:
             # Get user data from database
@@ -404,7 +636,7 @@ class SimPulseTelegramBot:
                 await update.message.reply_text("❌ لم يتم العثور على بياناتك")
                 context.user_data.clear()
                 await self.show_main_menu(update, context)
-                return
+                return ConversationHandler.END
             
             # Format admin notification message
             admin_notification = ADMIN_USER_MESSAGE.format(
@@ -429,19 +661,30 @@ class SimPulseTelegramBot:
                     logger.error(f"Failed to send message to admin {admin_id}: {e}")
             
             if sent_count > 0:
-                await update.message.reply_text(MESSAGE_SENT_TO_ADMIN)
+                await update.message.reply_text(
+                    MESSAGE_SENT_TO_ADMIN,
+                    reply_markup=ReplyKeyboardRemove()
+                )
             else:
-                await update.message.reply_text("❌ فشل في إرسال الرسالة، الرجاء المحاولة لاحقاً")
+                await update.message.reply_text(
+                    "❌ فشل في إرسال الرسالة، الرجاء المحاولة لاحقاً",
+                    reply_markup=ReplyKeyboardRemove()
+                )
             
             # Clear state and return to main menu
             context.user_data.clear()
             await self.show_main_menu(update, context)
+            return ConversationHandler.END
             
         except Exception as e:
             logger.error(f"Error handling admin contact message: {e}")
-            await update.message.reply_text("❌ حدث خطأ أثناء إرسال الرسالة")
+            await update.message.reply_text(
+                "❌ حدث خطأ أثناء إرسال الرسالة",
+                reply_markup=ReplyKeyboardRemove()
+            )
             context.user_data.clear()
             await self.show_main_menu(update, context)
+            return ConversationHandler.END
     
     # ========================================================================
     # ADMIN FUNCTIONS
@@ -497,6 +740,13 @@ class SimPulseTelegramBot:
             await self.show_admin_menu(update, context)
         elif message_text == BUTTON_BACK_ONE_STEP:
             await self.handle_back_navigation(update, context)
+        # Pagination handlers
+        elif message_text == "◀️ السابق":
+            await self.handle_pagination_previous(update, context)
+        elif message_text == "التالي ▶️":
+            await self.handle_pagination_next(update, context)
+        elif message_text.startswith("🔢 "):  # Page info button (ignore clicks)
+            return  # Do nothing for page info button clicks
         elif message_text.startswith("👤 "):  # User button clicked
             await self.handle_user_selection(update, context)
         elif message_text == BUTTON_APPROVE_USER:
@@ -507,6 +757,23 @@ class SimPulseTelegramBot:
             await self.handle_group_selection(update, context)
         elif message_text == BUTTON_RENAME_GROUP:  # Group rename button clicked
             return await self.handle_group_rename_request(update, context)
+        elif message_text == BUTTON_CHECK_BALANCE:  # Group balance check button
+            await self.handle_admin_group_balance_check(update, context)
+        elif message_text == BUTTON_VIEW_GROUP_USERS:  # New button to view group users
+            await self.show_group_users(update, context)
+        elif message_text == BUTTON_NEXT_PAGE:  # Pagination buttons
+            await self.handle_next_page(update, context)
+        elif message_text == BUTTON_PREV_PAGE:
+            await self.handle_prev_page(update, context)
+        elif message_text == BUTTON_BACK_TO_GROUP:
+            await self.handle_back_to_group(update, context)
+        elif message_text == BUTTON_BACK_TO_GROUPS:
+            await self.handle_back_to_groups(update, context)
+        # Handle user selection from group users list
+        elif " (" in message_text and ")" in message_text and any(emoji in message_text for emoji in ['✅', '⏳', '❌']):
+            # This is a user selection from group users list
+            phone = message_text.split("(")[1].split(")")[0]
+            await self.show_user_details_from_group(update, context, phone)
         elif message_text == BUTTON_CONFIRM_ACTION:
             await self.confirm_user_approval(update, context)
         elif message_text == BUTTON_CANCEL_ACTION:
@@ -541,8 +808,42 @@ class SimPulseTelegramBot:
     # INTERACTIVE ADMIN FUNCTIONS
     # ========================================================================
     
+    async def handle_next_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle next page navigation for group users"""
+        current_page = context.user_data.get('current_page', 1)
+        context.user_data['current_page'] = current_page + 1
+        await self.show_group_users(update, context)
+    
+    async def handle_prev_page(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle previous page navigation for group users"""
+        current_page = context.user_data.get('current_page', 1)
+        if current_page > 1:
+            context.user_data['current_page'] = current_page - 1
+        await self.show_group_users(update, context)
+    
+    async def handle_back_to_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle back to group details navigation"""
+        current_group = context.user_data.get('current_group')
+        if current_group:
+            # Reset pagination
+            context.user_data.pop('current_page', None)
+            # Clear selected user
+            context.user_data.pop('selected_user', None)
+            # Show group details
+            await self.show_group_details(update, context, current_group['name'])
+        else:
+            await self.show_groups_interactive(update, context)
+    
+    async def handle_back_to_groups(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle back to groups list navigation"""
+        # Clear current group context
+        context.user_data.pop('current_group', None)
+        context.user_data.pop('current_page', None) 
+        context.user_data.pop('selected_user', None)
+        await self.show_groups_interactive(update, context)
+
     async def show_pending_users_interactive(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show pending users as interactive buttons"""
+        """Show pending users as interactive buttons with pagination"""
         user_id = update.effective_user.id
         self.push_navigation(user_id, "pending_users")
         
@@ -554,20 +855,50 @@ class SimPulseTelegramBot:
             await update.message.reply_text(NO_PENDING_USERS, reply_markup=reply_markup)
             return
         
-        # Create buttons for each pending user
+        # Get current page from context or default to 1
+        current_page = context.user_data.get('pending_users_page', 1)
+        
+        # Calculate pagination
+        pagination_info = self.calculate_pagination(len(pending_users), USERS_PER_PAGE)
+        total_pages = pagination_info['total_pages']
+        
+        # Validate current page
+        if current_page > total_pages:
+            current_page = 1
+        elif current_page < 1:
+            current_page = 1
+        
+        # Update context with current page
+        context.user_data['pending_users_page'] = current_page
+        
+        # Get users for current page
+        page_users = self.get_page_items(pending_users, current_page, USERS_PER_PAGE)
+        
+        # Create buttons for users on current page
         keyboard = []
-        for user in pending_users:
+        for user in page_users:
             user_button = f"👤 {user['full_name']} ({user['phone_number']})"
+            user_button = self.truncate_button_text(user_button)
             keyboard.append([user_button])
         
+        # Add pagination navigation buttons
+        pagination_buttons = self.create_pagination_buttons(current_page, total_pages)
+        keyboard.extend(pagination_buttons)
+        
+        # Add back button
         keyboard.append([BUTTON_BACK_ONE_STEP])
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
-        header_text = PENDING_USERS_HEADER.format(count=len(pending_users))
+        # Create header with page info
+        if total_pages > 1:
+            header_text = f"👥 المستخدمين المعلقين ({len(pending_users)})\n\n📄 الصفحة {current_page} من {total_pages}\n\nاختر مستخدم للموافقة أو الرفض:"
+        else:
+            header_text = PENDING_USERS_HEADER.format(count=len(pending_users))
+        
         await update.message.reply_text(header_text, reply_markup=reply_markup)
     
     async def show_all_users_interactive(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Show all users as interactive buttons"""
+        """Show all users as interactive buttons with pagination"""
         user_id = update.effective_user.id
         self.push_navigation(user_id, "users_list")
         
@@ -579,9 +910,28 @@ class SimPulseTelegramBot:
             await update.message.reply_text(NO_USERS_FOUND, reply_markup=reply_markup)
             return
         
-        # Create buttons for each user with status indicator
+        # Get current page from context or default to 1
+        current_page = context.user_data.get('all_users_page', 1)
+        
+        # Calculate pagination
+        pagination_info = self.calculate_pagination(len(all_users), USERS_PER_PAGE)
+        total_pages = pagination_info['total_pages']
+        
+        # Validate current page
+        if current_page > total_pages:
+            current_page = 1
+        elif current_page < 1:
+            current_page = 1
+        
+        # Update context with current page
+        context.user_data['all_users_page'] = current_page
+        
+        # Get users for current page
+        page_users = self.get_page_items(all_users, current_page, USERS_PER_PAGE)
+        
+        # Create buttons for users on current page with status indicator
         keyboard = []
-        for user in all_users:
+        for user in page_users:
             status_emoji = {
                 'pending': '⏳',
                 'approved': '✅', 
@@ -589,12 +939,23 @@ class SimPulseTelegramBot:
             }.get(user['status'], '❓')
             
             user_button = f"👤 {status_emoji} {user['full_name']} ({user['phone_number']})"
+            user_button = self.truncate_button_text(user_button)
             keyboard.append([user_button])
         
+        # Add pagination navigation buttons
+        pagination_buttons = self.create_pagination_buttons(current_page, total_pages)
+        keyboard.extend(pagination_buttons)
+        
+        # Add back button
         keyboard.append([BUTTON_BACK_ONE_STEP])
         reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         
-        header_text = ALL_USERS_HEADER.format(count=len(all_users))
+        # Create header with page info
+        if total_pages > 1:
+            header_text = f"👤 جميع المستخدمين ({len(all_users)})\n\n📄 الصفحة {current_page} من {total_pages}\n\nاختر مستخدم لعرض التفاصيل:"
+        else:
+            header_text = ALL_USERS_HEADER.format(count=len(all_users))
+        
         await update.message.reply_text(header_text, reply_markup=reply_markup)
     
     async def show_groups_interactive(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -825,40 +1186,40 @@ class SimPulseTelegramBot:
                 status=status
             )
             
-            # Build detailed user list
-            users_list = ""
+            # Build user preview (show up to 5 users in summary)
+            users_preview = ""
             if users_in_group:
-                users_list += "👥 قائمة المستخدمين:\n"
-                for i, user in enumerate(users_in_group[:10]):  # Show up to 10 users
+                users_preview += "👥 آخر المستخدمين المسجلين:\n"
+                for i, user in enumerate(users_in_group[:5]):  # Show up to 5 users in preview
                     status_emoji = {
                         'pending': '⏳',
                         'approved': '✅',
                         'rejected': '❌'
                     }.get(user.get('status', 'approved'), '✅')
                     
-                    users_list += f"{i+1}. {status_emoji} {user['full_name']}\n"
-                    users_list += f"   📞 {user['phone_number']}\n"
-                    if i < len(users_in_group) - 1 and i < 9:  # Add separator except for last item
-                        users_list += "   ─────────────\n"
+                    users_preview += f"{i+1}. {status_emoji} {user['full_name']}\n"
+                    users_preview += f"   📞 {user['phone_number']}\n"
                 
-                if user_count > 10:
-                    users_list += f"\n... و {user_count - 10} مستخدمين آخرين"
+                if user_count > 5:
+                    users_preview += f"\n... و {user_count - 5} مستخدمين آخرين"
             else:
-                users_list = "👥 لا يوجد مستخدمين في هذه المجموعة بعد"
+                users_preview = "👥 لا يوجد مستخدمين في هذه المجموعة بعد"
             
             # Combine messages
-            full_message = group_details + "\n" + users_list
+            full_message = group_details + "\n" + users_preview
             
-            # Store group info for potential renaming
+            # Store group info for navigation
             context.user_data['current_group'] = {
                 'id': group['id'],
                 'name': group_name,
                 'original_group_data': group
             }
             
-            # Create enhanced buttons with better layout
+            # Create enhanced buttons with user management option
             keyboard = [
-                [BUTTON_RENAME_GROUP],
+                [BUTTON_CHECK_BALANCE],
+                [BUTTON_VIEW_GROUP_USERS],  # New button to view all users
+                [BUTTON_RENAME_GROUP], 
                 [BUTTON_BACK_ONE_STEP]
             ]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
@@ -868,6 +1229,184 @@ class SimPulseTelegramBot:
         except Exception as e:
             logger.error(f"Error showing group details: {e}")
             await update.message.reply_text("❌ حدث خطأ أثناء عرض تفاصيل المجموعة. الرجاء المحاولة مرة أخرى.")
+    
+    async def show_group_users(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show all users in the current group with pagination"""
+        try:
+            current_group = context.user_data.get('current_group')
+            if not current_group:
+                await update.message.reply_text("❌ خطأ: لم يتم اختيار مجموعة")
+                return
+            
+            group_id = current_group['id']
+            group_name = current_group['name']
+            
+            # Get all users in this group
+            users_in_group = db.get_users_by_group_id(group_id)
+            
+            if not users_in_group:
+                await update.message.reply_text(
+                    NO_USERS_IN_GROUP.format(group_name=group_name)
+                )
+                return
+            
+            # Pagination setup
+            page = context.user_data.get('current_page', 1)
+            users_per_page = 8
+            total_users = len(users_in_group)
+            total_pages = (total_users + users_per_page - 1) // users_per_page
+            
+            # Calculate start and end indices
+            start_idx = (page - 1) * users_per_page
+            end_idx = min(start_idx + users_per_page, total_users)
+            page_users = users_in_group[start_idx:end_idx]
+            
+            # Create header message
+            header_message = GROUP_USERS_HEADER.format(
+                group_name=group_name,
+                total_users=total_users,
+                current_page=page,
+                total_pages=total_pages
+            )
+            
+            # Create user buttons
+            keyboard = []
+            for user in page_users:
+                status_emoji = {
+                    'pending': '⏳',
+                    'approved': '✅', 
+                    'rejected': '❌'
+                }.get(user.get('status', 'approved'), '✅')
+                
+                # Create user button with name and phone for identification
+                user_button = f"{status_emoji} {user['full_name']} ({user['phone_number']})"
+                keyboard.append([user_button])
+            
+            # Add navigation buttons
+            nav_buttons = []
+            if page > 1:
+                nav_buttons.append(BUTTON_PREV_PAGE)
+            if page < total_pages:
+                nav_buttons.append(BUTTON_NEXT_PAGE)
+            
+            if nav_buttons:
+                keyboard.append(nav_buttons)
+            
+            # Add back button
+            keyboard.append([BUTTON_BACK_TO_GROUP])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            
+            await update.message.reply_text(header_message, reply_markup=reply_markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing group users: {e}")
+            await update.message.reply_text("❌ حدث خطأ أثناء عرض المستخدمين. الرجاء المحاولة مرة أخرى.")
+    
+    async def show_user_details_from_group(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_phone: str):
+        """Show user details when selected from group users list"""
+        try:
+            current_group = context.user_data.get('current_group')
+            if not current_group:
+                await update.message.reply_text("❌ خطأ: لم يتم اختيار مجموعة")
+                return
+            
+            # Get user by phone number
+            user_data = db.get_telegram_user_by_phone(user_phone)
+            if not user_data:
+                await update.message.reply_text("❌ لم يتم العثور على المستخدم")
+                return
+            
+            # Store selected user for further actions
+            context.user_data['selected_user'] = user_data
+            
+            # Get user details
+            status_text = {
+                'pending': '⏳ معلق',
+                'approved': '✅ مُعتمد',
+                'rejected': '❌ مرفوض'
+            }.get(user_data.get('status', 'approved'), '✅ مُعتمد')
+            
+            verified_balance = user_data.get('verified_balance', 0.0)
+            
+            # Format user details
+            user_details = GROUP_USER_DETAILS.format(
+                group_name=current_group['name'],
+                user_name=user_data['full_name'],
+                user_phone=user_data['phone_number'],
+                telegram_id=user_data['telegram_id'],
+                registration_date=user_data['created_at'][:16],
+                status=status_text,
+                verified_balance=verified_balance
+            )
+            
+            # Create action buttons based on user status
+            keyboard = []
+            
+            if user_data['status'] == 'approved':
+                # Settlement button always available for approved users
+                keyboard.append([BUTTON_USER_VERIFICATIONS_SETTLEMENT])
+                
+                # Management buttons
+                keyboard.append([BUTTON_TRANSFER_TO_GROUP, BUTTON_REMOVE_FROM_GROUP])
+            elif user_data['status'] == 'pending':
+                # Approval actions for pending users
+                keyboard.append([BUTTON_APPROVE_USER, BUTTON_REJECT_USER])
+            
+            # Navigation buttons
+            keyboard.append([BUTTON_BACK_TO_GROUP])
+            
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+            
+            await update.message.reply_text(user_details, reply_markup=reply_markup)
+            
+        except Exception as e:
+            logger.error(f"Error showing user details from group: {e}")
+            await update.message.reply_text("❌ حدث خطأ أثناء عرض تفاصيل المستخدم. الرجاء المحاولة مرة أخرى.")
+
+    async def handle_admin_group_balance_check(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """معالج فحص رصيد المجموعة للإداريين"""
+        try:
+            current_group = context.user_data.get('current_group')
+            if not current_group:
+                await update.message.reply_text("❌ خطأ: لم يتم اختيار مجموعة")
+                return
+            
+            group_id = current_group['id']
+            group_name = current_group['name']
+            
+            logger.info(f"🔍 Admin checking balance for group {group_id} ({group_name})")
+            
+            # Send processing message
+            processing_msg = await update.message.reply_text(BALANCE_CHECK_PROCESSING)
+            
+            # Check balance via service
+            result = await balance_service.check_group_balance(group_id)
+            
+            # Delete processing message
+            try:
+                await processing_msg.delete()
+            except Exception as e:
+                logger.warning(f"Could not delete processing message: {e}")
+            
+            # Send result
+            if result['success']:
+                success_message = f"📁 **{group_name}**\n\n" + BALANCE_CHECK_SUCCESS.format(**result['data'])
+                await update.message.reply_text(success_message)
+                logger.info(f"✅ Balance check successful for group {group_id}")
+            else:
+                await update.message.reply_text(result.get('message', BALANCE_CHECK_FAILED))
+                logger.warning(f"❌ Balance check failed for group {group_id}")
+                
+        except Exception as e:
+            logger.error(f"Error in handle_admin_group_balance_check: {e}")
+            # Try to delete processing message if it exists
+            try:
+                if 'processing_msg' in locals():
+                    await processing_msg.delete()
+            except:
+                pass
+            await update.message.reply_text(BALANCE_CHECK_FAILED)
     
     async def handle_group_rename_request(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle group rename button click"""
@@ -1873,40 +2412,102 @@ class SimPulseTelegramBot:
             fallbacks=[CommandHandler('cancel', self.cancel)]
         )
         
+        # Contact admin conversation handler
+        contact_admin_handler = ConversationHandler(
+            entry_points=[MessageHandler(filters.Regex("^📞 التواصل مع المشرف$"), self.show_contact_admin)],
+            states={
+                WAITING_FOR_ADMIN_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_admin_contact_message)],
+            },
+            fallbacks=[
+                CommandHandler('cancel', self.cancel),
+                MessageHandler(filters.Regex("^❌ إلغاء$"), self.cancel)
+            ]
+        )
+        
         # Add handlers in order of priority
         self.application.add_handler(registration_handler)
         self.application.add_handler(verification_handler)
         self.application.add_handler(group_management_handler)
+        self.application.add_handler(contact_admin_handler)
         self.application.add_handler(CommandHandler('admin', self.show_admin_menu))
         self.application.add_handler(CommandHandler('reply', self.reply_to_user_command))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
+        # Add error handler
+        self.application.add_error_handler(self.error_handler)
+        
         logger.info("Bot handlers setup complete")
+    
+    async def error_handler(self, update: object, context: ContextTypes.DEFAULT_TYPE):
+        """Handle errors in the bot"""
+        error = context.error
+        error_message = str(error).lower()
+        
+        logger.error(f"Exception while handling an update: {error}")
+        
+        # Handle specific error types
+        if "event loop is closed" in error_message:
+            logger.error("Event loop is closed - this is a critical issue that may require bot restart")
+            # Don't try to send messages when event loop is closed
+            return
+            
+        elif "network" in error_message or "connection" in error_message:
+            logger.warning(f"Network error occurred: {error}")
+            # Network errors are usually temporary, just log them
+            
+        elif "flood" in error_message or "rate" in error_message:
+            logger.warning(f"Rate limiting detected: {error}")
+            # Rate limit errors don't need user notification
+            
+        elif "bad request" in error_message:
+            logger.warning(f"Bad request to Telegram API: {error}")
+            
+        else:
+            logger.error(f"Unhandled bot error: {error}")
+        
+        # Try to notify the user if possible and it's a user-facing error
+        if (update and hasattr(update, 'effective_message') and 
+            update.effective_message and 
+            "event loop is closed" not in error_message and
+            "network" not in error_message):
+            
+            try:
+                await self._safe_reply(update, "❌ حدث خطأ مؤقت. الرجاء المحاولة مرة أخرى.")
+            except Exception as e:
+                logger.error(f"Failed to send error message to user: {e}")
     
     async def run(self):
         """Run the bot"""
-        # Create application
-        self.application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
-        
-        # Setup handlers
-        self.setup_handlers()
-        
-        logger.info("Starting SimPulse Telegram Bot...")
-        
-        # Start bot
-        await self.application.initialize()
-        await self.application.start()
-        await self.application.updater.start_polling()
-        
-        logger.info("Bot is running! Press Ctrl+C to stop.")
-        
-        # Keep running
         try:
-            await asyncio.Event().wait()
-        except KeyboardInterrupt:
-            logger.info("Stopping bot...")
+            # Create application
+            self.application = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+            
+            # Setup handlers
+            self.setup_handlers()
+            
+            logger.info("Starting SimPulse Telegram Bot...")
+            
+            # Start bot
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling()
+            
+            logger.info("Bot is running! Press Ctrl+C to stop.")
+            
+            # Keep running
+            try:
+                await asyncio.Event().wait()
+            except KeyboardInterrupt:
+                logger.info("Stopping bot...")
+        except Exception as e:
+            logger.error(f"Error in bot run: {e}")
         finally:
-            await self.application.stop()
+            try:
+                if hasattr(self, 'application') and self.application:
+                    await self.application.stop()
+                    await self.application.shutdown()
+            except Exception as e:
+                logger.error(f"Error stopping application: {e}")
     
     def start_bot(self):
         """Start the bot in background thread"""
@@ -1916,22 +2517,90 @@ class SimPulseTelegramBot:
         
         def run_bot():
             try:
-                asyncio.run(self.run())
+                # Create new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Store reference to loop for safe shutdown
+                self._bot_loop = loop
+                
+                # Run the bot
+                loop.run_until_complete(self.run())
             except Exception as e:
                 logger.error(f"Bot error: {e}")
+            finally:
+                try:
+                    # Clean shutdown
+                    if hasattr(self, '_bot_loop') and not self._bot_loop.is_closed():
+                        # Cancel all pending tasks
+                        pending = asyncio.all_tasks(self._bot_loop)
+                        for task in pending:
+                            task.cancel()
+                        
+                        # Wait for tasks to complete cancellation
+                        if pending:
+                            self._bot_loop.run_until_complete(
+                                asyncio.gather(*pending, return_exceptions=True)
+                            )
+                        
+                        self._bot_loop.close()
+                        logger.info("Event loop closed properly")
+                except Exception as e:
+                    logger.error(f"Error closing event loop: {e}")
         
         self.bot_thread = threading.Thread(target=run_bot, daemon=True)
         self.bot_thread.start()
         logger.info("✅ Telegram Bot started in background thread")
     
     def stop_bot(self):
-        """Stop the bot"""
+        """Stop the bot properly to avoid conflicts"""
         try:
+            logger.info("Telegram Bot stopping...")
             if hasattr(self, 'application') and self.application:
-                # This will trigger the KeyboardInterrupt in run()
-                logger.info("Telegram Bot stopping...")
+                # Signal the bot to stop
+                if hasattr(self.application, 'updater') and self.application.updater:
+                    # Use proper async shutdown to avoid conflicts
+                    try:
+                        # Create a new event loop for shutdown if needed
+                        import asyncio
+                        try:
+                            loop = asyncio.get_event_loop()
+                            if loop.is_closed():
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        
+                        # Run shutdown properly
+                        loop.run_until_complete(self._async_shutdown())
+                        
+                    except Exception as e:
+                        logger.error(f"Error during graceful shutdown: {e}")
+                        # Force stop if graceful shutdown fails
+                        if hasattr(self.application, 'updater'):
+                            try:
+                                self.application.updater.stop()
+                            except:
+                                pass
+                
+            # Wait for thread to finish (with timeout)
+            if hasattr(self, 'bot_thread') and self.bot_thread.is_alive():
+                self.bot_thread.join(timeout=5.0)
+                if self.bot_thread.is_alive():
+                    logger.warning("Bot thread did not terminate within timeout")
+                    
         except Exception as e:
             logger.error(f"Error stopping bot: {e}")
+            
+    async def _async_shutdown(self):
+        """Async shutdown method to properly close the bot"""
+        try:
+            if hasattr(self, 'application') and self.application:
+                await self.application.stop()
+                await self.application.shutdown()
+        except Exception as e:
+            logger.error(f"Error in async shutdown: {e}")
 
 # Global bot instance
 bot = SimPulseTelegramBot()

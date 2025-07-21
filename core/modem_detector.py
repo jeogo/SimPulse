@@ -1,6 +1,7 @@
 """
 SimPulse Modem Detector
-Event-driven modem detection that scans ALL COM ports (1-999)
+Real-time event-driven modem detection using Windows WMI
+Combines initial scan with real-time device monitoring
 """
 
 import serial
@@ -18,11 +19,12 @@ from .config import (
 )
 from .port_filter import port_filter
 from .database import db
+from .device_monitor import device_monitor
 
 logger = logging.getLogger(__name__)
 
 class ModemDetector:
-    """Handles event-driven modem detection across all COM ports"""
+    """Handles real-time event-driven modem detection with Windows WMI integration"""
     
     def __init__(self):
         self.max_com_ports = MAX_COM_PORTS
@@ -40,9 +42,17 @@ class ModemDetector:
         self.known_modems = {}  # IMEI -> modem info
         self.scanning = False
         self.scan_thread = None
+        self.real_time_monitoring = False
         
         # Initialize with existing modems from database
         self._load_known_modems()
+        
+        # Setup device monitor callbacks
+        device_monitor.set_callbacks(
+            on_device_connected=self._on_device_connected,
+            on_device_disconnected=self._on_device_disconnected,
+            on_com_port_change=self._on_com_port_change
+        )
     
     def set_callbacks(self, on_modem_detected: Callable = None, 
                      on_modem_removed: Callable = None,
@@ -53,19 +63,182 @@ class ModemDetector:
         self.on_scan_complete = on_scan_complete
     
     def start_detection(self):
-        """Start the modem detection system - ONE TIME ONLY"""
-        logger.info("Starting modem detection system (ONE TIME SCAN)")
+        """Start the enhanced modem detection system with real-time monitoring"""
+        logger.info("🚀 Starting enhanced modem detection system")
+        logger.info("     ✅ Initial full scan")
+        logger.info("     ✅ Real-time WMI monitoring")
         
-        # Only do full scan once, no continuous monitoring
+        # Start initial full scan
         self.start_full_scan()
+        
+        # Start real-time device monitoring
+        self._start_real_time_monitoring()
     
     def stop_detection(self):
         """Stop the modem detection system"""
-        logger.info("Stopping modem detection system")
+        logger.info("🛑 Stopping modem detection system")
         self.scanning = False
+        self.real_time_monitoring = False
         
+        # Stop device monitoring
+        try:
+            device_monitor.stop_monitoring()
+        except Exception as e:
+            logger.error(f"Error stopping device monitor: {e}")
+        
+        # Stop scan thread
         if self.scan_thread and self.scan_thread.is_alive():
             self.scan_thread.join(timeout=5)
+    
+    def _start_real_time_monitoring(self):
+        """Start real-time device monitoring"""
+        try:
+            logger.info("🔄 Starting real-time device monitoring...")
+            self.real_time_monitoring = True
+            device_monitor.start_monitoring()
+            logger.info("✅ Real-time monitoring started")
+        except Exception as e:
+            logger.error(f"❌ Failed to start real-time monitoring: {e}")
+            # Continue without real-time monitoring
+    
+    def _on_device_connected(self, device_info: Dict):
+        """Handle device connection events from WMI"""
+        try:
+            logger.info(f"🔌 Device connected event: {device_info['type']}")
+            
+            # Wait a moment for device to be ready
+            time.sleep(2)
+            
+            # Trigger quick scan to detect new modems
+            self._trigger_device_change_scan("Device connected")
+            
+        except Exception as e:
+            logger.error(f"Error handling device connection: {e}")
+    
+    def _on_device_disconnected(self, device_info: Dict):
+        """Handle device disconnection events from WMI"""
+        try:
+            logger.info(f"🔌❌ Device disconnected event: {device_info['type']}")
+            
+            # Check for removed modems
+            self._check_modem_availability()
+            
+        except Exception as e:
+            logger.error(f"Error handling device disconnection: {e}")
+    
+    def _on_com_port_change(self, change_info: Dict):
+        """Handle COM port changes from WMI"""
+        try:
+            change_type = change_info['type']
+            port = change_info['port']
+            
+            logger.info(f"📡 COM port change: {change_type} - {port}")
+            
+            if change_type in ['COM_PORT_ADDED', 'COM_PORT_DETECTED']:
+                # New COM port detected - scan it
+                self._scan_specific_port(port)
+            
+            elif change_type in ['COM_PORT_REMOVED', 'COM_PORT_LOST']:
+                # COM port removed - check which modem lost it
+                self._handle_port_removal(port)
+            
+        except Exception as e:
+            logger.error(f"Error handling COM port change: {e}")
+    
+    def _trigger_device_change_scan(self, reason: str):
+        """Trigger a scan due to device changes"""
+        if self.scanning:
+            logger.info(f"⏳ Scan already in progress, skipping trigger: {reason}")
+            return
+        
+        logger.info(f"🔍 Triggering device change scan: {reason}")
+        
+        # Get current system ports and scan them
+        system_ports = self._get_system_ports()
+        if system_ports:
+            threading.Thread(
+                target=self._device_change_scan_worker,
+                args=(system_ports, reason),
+                daemon=True
+            ).start()
+    
+    def _device_change_scan_worker(self, ports: List[str], reason: str):
+        """Worker for device change scans"""
+        try:
+            logger.info(f"🔍 Device change scan starting: {reason}")
+            logger.info(f"     Scanning {len(ports)} ports: {ports}")
+            
+            self._process_detected_ports(ports)
+            
+            logger.info(f"✅ Device change scan completed: {reason}")
+            
+        except Exception as e:
+            logger.error(f"Error in device change scan: {e}")
+    
+    def _scan_specific_port(self, port: str):
+        """Scan a specific COM port that was just detected"""
+        try:
+            logger.info(f"🔍 Scanning specific port: {port}")
+            
+            # Quick scan of just this port
+            threading.Thread(
+                target=self._process_detected_ports,
+                args=([port],),
+                daemon=True
+            ).start()
+            
+        except Exception as e:
+            logger.error(f"Error scanning specific port {port}: {e}")
+    
+    def _handle_port_removal(self, removed_port: str):
+        """Handle removal of a specific COM port"""
+        try:
+            logger.info(f"📡❌ Handling removal of port: {removed_port}")
+            
+            # Find which modem was using this port
+            affected_modem = None
+            for imei, modem_info in self.known_modems.items():
+                if modem_info.get('port') == removed_port:
+                    affected_modem = imei
+                    break
+            
+            if affected_modem:
+                logger.info(f"🔌❌ Modem {affected_modem} lost port {removed_port}")
+                
+                # Trigger modem removed callback
+                if self.on_modem_removed:
+                    self.on_modem_removed(self.known_modems[affected_modem])
+                
+                # Remove from known modems (will be re-added if reconnected)
+                del self.known_modems[affected_modem]
+            
+        except Exception as e:
+            logger.error(f"Error handling port removal: {e}")
+    
+    def _check_modem_availability(self):
+        """Check if current modems are still available"""
+        try:
+            logger.info("🔍 Checking modem availability after device change")
+            
+            current_ports = set(self._get_system_ports())
+            unavailable_modems = []
+            
+            for imei, modem_info in self.known_modems.items():
+                modem_port = modem_info.get('port')
+                if modem_port and modem_port not in current_ports:
+                    unavailable_modems.append(imei)
+            
+            # Remove unavailable modems
+            for imei in unavailable_modems:
+                logger.info(f"🔌❌ Modem {imei} no longer available")
+                
+                if self.on_modem_removed:
+                    self.on_modem_removed(self.known_modems[imei])
+                
+                del self.known_modems[imei]
+            
+        except Exception as e:
+            logger.error(f"Error checking modem availability: {e}")
     
     def start_full_scan(self):
         """Start full COM port scan"""

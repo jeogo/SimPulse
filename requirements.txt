@@ -5,3 +5,4 @@ pytz
 reportlab
 arabic-reshaper
 python-bidi
+WMI

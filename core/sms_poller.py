@@ -112,7 +112,7 @@ class SMSPoller:
         logger.info("📱 SMS polling worker stopped")
         
     def _refresh_active_sims(self):
-        """Refresh list of active SIMs with their modem ports"""
+        """Refresh list of active SIMs with their modem ports - FILTERED FOR REAL CONNECTED SIMS ONLY"""
         try:
             # Get all active SIMs from database
             with db.get_connection() as conn:
@@ -125,20 +125,53 @@ class SMSPoller:
                 """)
                 db_sims = [dict(row) for row in cursor.fetchall()]
             
-            # Match with known modems to get ports
+            # ENHANCED FILTERING: Match with known modems and filter out test/invalid SIMs
             active_sims = []
+            test_imei_patterns = [
+                'TEST',
+                '123456789',
+                '000000000',
+                '111111111'
+            ]
+            
             for sim in db_sims:
                 imei = sim['imei']
+                phone = sim.get('phone_number', '')
+                
+                # Filter 1: Skip test/fake IMEIs
+                is_test_imei = any(pattern in imei for pattern in test_imei_patterns)
+                if is_test_imei:
+                    logger.debug(f"📱 FILTER: Skipping test IMEI {imei}")
+                    continue
+                
+                # Filter 2: Must have valid phone number (not test numbers)
+                if not phone or phone in ['0123456789', '1234567890', '0000000000']:
+                    logger.debug(f"📱 FILTER: Skipping SIM {sim['id']} with invalid phone {phone}")
+                    continue
+                
+                # Filter 3: Must be in known_modems with valid port
                 if imei in modem_detector.known_modems:
                     modem_info = modem_detector.known_modems[imei]
-                    sim['port'] = modem_info['port']
-                    active_sims.append(sim)
+                    port = modem_info.get('port')
+                    
+                    if port:  # Must have valid port
+                        sim['port'] = port
+                        active_sims.append(sim)
+                        logger.debug(f"📱 ACTIVE: SIM {sim['id']} (IMEI {imei[-6:]}, Phone {phone}) on port {port}")
+                    else:
+                        logger.debug(f"📱 FILTER: IMEI {imei} has no valid port")
                 else:
-                    logger.warning(f"SIM {sim['id']} (IMEI {imei}) - no port info available")
+                    logger.debug(f"📱 FILTER: IMEI {imei} not in known modems")
             
             # Update active SIMs list if changed
             if len(active_sims) != len(self.active_sims):
-                logger.info(f"📱 Active SIMs updated: {len(active_sims)} SIMs available")
+                logger.info(f"📱 Active SIMs updated: {len(active_sims)} SIMs available (filtered from {len(db_sims)} total)")
+                if len(active_sims) == 0:
+                    logger.warning("⚠️  No valid SIMs available for polling - all filtered out")
+                else:
+                    for sim in active_sims:
+                        logger.info(f"   ✅ SIM {sim['id']}: IMEI {sim['imei'][-6:]} | Phone {sim['phone_number']} | Port {sim['port']}")
+                
                 self.active_sims = active_sims
                 # Reset index if needed
                 if self.current_sim_index >= len(self.active_sims):
@@ -511,6 +544,38 @@ class SMSPoller:
             if sender == '7711198105108105115':
                 logger.info(f"🚨 MOBLIS MESSAGE SAVED: ID={message_id}, Length={len(content)} chars")
                 logger.debug(f"🚨 MOBLIS Content: {content}")
+            
+            # ========================================
+            # NOTIFY ADMINS OF PROCESSED SMS
+            # ========================================
+            try:
+                # Get SIM info for notification
+                sim_info = db.get_sim_by_id(sim_id)
+                if sim_info:
+                    # Get group info
+                    group_info = db.get_group_by_id(sim_info.get('group_id'))
+                    group_name = group_info.get('group_name', 'غير محدد') if group_info else 'غير محدد'
+                    
+                    # Prepare notification data
+                    sms_notification_data = {
+                        'sim_number': sim_info.get('phone_number', 'غير معروف'),
+                        'sender': sender,
+                        'content': content,
+                        'timestamp': received_at,
+                        'group_name': group_name,
+                        'fragment_count': len(message.get('fragment_indices', [])) if 'fragment_indices' in message else 1,
+                        'message_id': message_id
+                    }
+                    
+                    # Send notification asynchronously without blocking SMS processing
+                    self._notify_admins_async(sms_notification_data)
+                    logger.debug(f"📨 Admin notification queued for SMS {message_id}")
+                else:
+                    logger.warning(f"⚠️  Could not find SIM info for ID {sim_id} - admin notification skipped")
+                    
+            except Exception as notify_error:
+                # Don't fail SMS save if notification fails
+                logger.error(f"❌ Failed to send admin notification for SMS {message_id}: {notify_error}")
             
             return True
             
@@ -1197,6 +1262,42 @@ class SMSPoller:
             'current_sim_index': self.current_sim_index,
             'stats': self.get_stats()
         }
+    
+    def _notify_admins_async(self, sms_data: Dict):
+        """Send SMS notification to admins asynchronously"""
+        try:
+            # Get telegram bot instance
+            from core.group_manager import get_telegram_bot
+            telegram_bot = get_telegram_bot()
+            
+            if telegram_bot and hasattr(telegram_bot, 'admin_service'):
+                import asyncio
+                import threading
+                
+                def run_notification():
+                    try:
+                        # Create new event loop for this thread
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        # Run the notification
+                        loop.run_until_complete(
+                            telegram_bot.admin_service.notify_sms_processed(sms_data)
+                        )
+                        loop.close()
+                        logger.debug(f"✅ SMS admin notification sent successfully")
+                    except Exception as e:
+                        logger.error(f"Error in SMS notification thread: {e}")
+                
+                # Run notification in separate thread to avoid blocking SMS processing
+                notification_thread = threading.Thread(target=run_notification, daemon=True)
+                notification_thread.start()
+                
+            else:
+                logger.debug(f"Telegram bot not available for SMS notification")
+                
+        except Exception as e:
+            logger.error(f"Error setting up SMS admin notification: {e}")
 
 # Global SMS poller instance
 sms_poller = SMSPoller()

@@ -11,6 +11,19 @@ from .database import db
 
 logger = logging.getLogger(__name__)
 
+# Global registry for telegram bot instance
+_telegram_bot_instance = None
+
+def register_telegram_bot(bot_instance):
+    """Register telegram bot instance for notifications"""
+    global _telegram_bot_instance
+    _telegram_bot_instance = bot_instance
+    logger.info("Telegram bot registered for SIM swap notifications")
+
+def get_telegram_bot():
+    """Get the registered telegram bot instance"""
+    return _telegram_bot_instance
+
 class GroupManager:
     """Handles automatic group creation and management for modems"""
     
@@ -20,6 +33,37 @@ class GroupManager:
         
         logger.info("Group Manager initialized")
     
+    def assign_modem_to_group(self, imei: str) -> Optional[int]:
+        """Assign a modem to a group - creates new group if needed"""
+        try:
+            # Get modem info
+            modem = db.get_modem_by_imei(imei)
+            if not modem:
+                logger.error(f"Modem with IMEI {imei} not found")
+                return None
+            
+            modem_id = modem['id']
+            
+            # Check if modem already has a group
+            existing_group = self.get_group_by_modem_id(modem_id)
+            if existing_group:
+                logger.info(f"📁 Modem {imei} already assigned to group: {existing_group['group_name']}")
+                return existing_group['id']
+            
+            # Auto-create group for this modem
+            group_id = self.auto_create_group_for_modem(modem_id, imei)
+            
+            if group_id:
+                logger.info(f"✅ Successfully assigned modem {imei} to group (ID: {group_id})")
+            else:
+                logger.error(f"Failed to assign modem {imei} to group")
+            
+            return group_id
+            
+        except Exception as e:
+            logger.error(f"Error assigning modem {imei} to group: {e}")
+            return None
+
     def auto_create_group_for_modem(self, modem_id: int, imei: str) -> Optional[int]:
         """Automatically create a group for a modem when SIM info is extracted"""
         try:
@@ -71,7 +115,7 @@ class GroupManager:
         try:
             with db.get_connection() as conn:
                 cursor = conn.execute(
-                    """SELECT g.*, m.imei, s.phone_number, s.balance 
+                    """SELECT g.*, m.imei, s.id as sim_id, s.phone_number, s.balance 
                        FROM groups g 
                        JOIN modems m ON g.modem_id = m.id 
                        LEFT JOIN sims s ON m.id = s.modem_id AND s.status = 'active'
@@ -89,7 +133,7 @@ class GroupManager:
         try:
             with db.get_connection() as conn:
                 cursor = conn.execute(
-                    """SELECT g.*, m.imei, s.phone_number, s.balance 
+                    """SELECT g.*, m.imei, s.id as sim_id, s.phone_number, s.balance 
                        FROM groups g 
                        JOIN modems m ON g.modem_id = m.id 
                        LEFT JOIN sims s ON m.id = s.modem_id AND s.status = 'active'
@@ -143,7 +187,7 @@ class GroupManager:
         try:
             with db.get_connection() as conn:
                 cursor = conn.execute(
-                    """SELECT g.*, m.imei, s.phone_number, s.balance 
+                    """SELECT g.*, m.imei, s.id as sim_id, s.phone_number, s.balance 
                        FROM groups g 
                        JOIN modems m ON g.modem_id = m.id 
                        LEFT JOIN sims s ON m.id = s.modem_id AND s.status = 'active'
@@ -275,7 +319,7 @@ class GroupManager:
             return f"{self.group_prefix}{timestamp}"
     
     def _handle_potential_sim_swap(self, modem_id: int, imei: str, group_id: int):
-        """Handle potential SIM swap detection"""
+        """Handle potential SIM swap detection with enhanced notification"""
         try:
             # Get current SIM info for this modem
             with db.get_connection() as conn:
@@ -297,12 +341,78 @@ class GroupManager:
                 
                 if current_phone and previous_phone and current_phone != previous_phone:
                     logger.info(f"🔄 SIM SWAP detected for IMEI {imei}:")
-                    logger.info(f"   Previous SIM: {previous_phone}")
-                    logger.info(f"   New SIM: {current_phone}")
-                    logger.info(f"   Group '{group_id}' maintained - no duplicate created")
+                    logger.info(f"     Old SIM: {previous_phone}")
+                    logger.info(f"     New SIM: {current_phone}")
+                    logger.info(f"     Old Balance: {previous_sim['balance']}")
+                    logger.info(f"     New Balance: {current_sim['balance']}")
                     
+                    # Get group information
+                    group_info = self.get_group_by_id(group_id)
+                    if group_info:
+                        group_name = group_info['group_name']
+                        
+                        # Trigger notification for the SIM swap
+                        self._trigger_sim_swap_notification(
+                            group_name=group_name,
+                            imei=imei,
+                            old_sim_number=previous_phone,
+                            new_sim_number=current_phone,
+                            old_balance=str(previous_sim['balance']) if previous_sim['balance'] else "0.00",
+                            new_balance=str(current_sim['balance']) if current_sim['balance'] else "0.00"
+                        )
+                        
+                        logger.info(f"✅ SIM swap notification triggered for group {group_name}")
+                    else:
+                        logger.error(f"Could not find group info for group_id {group_id}")
+                        
                     # Log this event for tracking
                     self._log_sim_swap_event(group_id, modem_id, previous_phone, current_phone)
+                    
+        except Exception as e:
+            logger.error(f"Error handling potential SIM swap for IMEI {imei}: {e}")
+    
+    def _trigger_sim_swap_notification(self, group_name: str, imei: str, old_sim_number: str, 
+                                     new_sim_number: str, old_balance: str, new_balance: str):
+        """Trigger SIM swap notification through admin service"""
+        try:
+            # Get the registered telegram bot instance
+            telegram_bot = get_telegram_bot()
+            
+            if telegram_bot and hasattr(telegram_bot, 'admin_service'):
+                import asyncio
+                import threading
+                
+                def run_notification():
+                    try:
+                        # Create new event loop for this thread
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        # Run the notification
+                        loop.run_until_complete(
+                            telegram_bot.admin_service.notify_sim_swap(
+                                group_name=group_name,
+                                imei=imei,
+                                old_sim_number=old_sim_number,
+                                new_sim_number=new_sim_number,
+                                old_balance=old_balance,
+                                new_balance=new_balance
+                            )
+                        )
+                        loop.close()
+                        logger.info(f"✅ SIM swap notification sent successfully for group {group_name}")
+                    except Exception as e:
+                        logger.error(f"Error in notification thread: {e}")
+                
+                # Run notification in separate thread to avoid blocking
+                notification_thread = threading.Thread(target=run_notification, daemon=True)
+                notification_thread.start()
+                
+            else:
+                logger.warning(f"⚠️  Telegram bot not available for SIM swap notification (group: {group_name})")
+                
+        except Exception as e:
+            logger.error(f"Error triggering SIM swap notification: {e}")
                     
         except Exception as e:
             logger.error(f"Error handling potential SIM swap for IMEI {imei}: {e}")

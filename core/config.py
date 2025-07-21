@@ -133,6 +133,11 @@ ADMIN_TELEGRAM_IDS = [
 MOBILIS_SENDER_ID = '7711198105108105115'
 VERIFICATION_TIME_MARGIN_MINUTES = 2
 
+# ============================================================================
+# BALANCE LIMIT SETTINGS
+# ============================================================================
+BALANCE_LIMIT = 45000.0  # DZD - الحد الأقصى للرصيد قبل إرسال تنبيه
+
 # Valid recharge message patterns
 VALID_RECHARGE_PATTERNS = [
     r'Vous avez rechargé.*?(\d+(?:[.,]\d+)?)\s*(?:DZD|DA).*?le\s*(\d{2}[/\-]\d{2}[/\-]\d{4})\s*(\d{2}:\d{2}:\d{2})'

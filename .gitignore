@@ -1,0 +1,314 @@
+# SimPulse Project .gitignore
+# Comprehensive ignore file for Python, Windows, and project-specific files
+
+# ============================================================================
+# PYTHON SPECIFIC
+# ============================================================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ============================================================================
+# SIMPULSE PROJECT SPECIFIC
+# ============================================================================
+
+# Database files
+data/modem_system.db
+data/modem_system.db-journal
+data/modem_system.db-wal
+data/modem_system.db-shm
+*.db
+*.sqlite
+*.sqlite3
+
+# Log files
+data/*.log
+*.log
+logs/
+
+# Backup files
+*.bak
+*.backup
+*_backup.*
+backup/
+
+# Process and lock files
+simpulse.lock
+simpulse.pid
+*.pid
+*.lock
+
+# Generated configuration files
+config_local.py
+local_config.py
+.env.local
+
+# Test files and temporary data
+test_*.py
+demo_*.py
+*_test.py
+testing/
+
+# Output and generated files
+output/
+generated/
+reports/
+exports/
+
+# PDF reports (settlement files)
+*.pdf
+reports/*.pdf
+settlement_reports/
+
+# CSV exports
+*.csv
+exports/*.csv
+
+# Modem and SIM specific temporary files
+modem_*.tmp
+sim_*.tmp
+ussd_*.tmp
+sms_*.tmp
+
+# Telegram bot specific
+bot_session.session
+bot_*.session
+
+# System monitoring files
+system_monitor.json
+device_monitor.json
+port_monitor.json
+
+# ============================================================================
+# WINDOWS SPECIFIC
+# ============================================================================
+
+# Windows thumbnail cache files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump file
+*.stackdump
+
+# Folder config file
+[Dd]esktop.ini
+
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+# Windows batch temporary files
+temp_*.bat
+tmp_*.bat
+
+# ============================================================================
+# DEVELOPMENT TOOLS
+# ============================================================================
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-rt-v][a-z]
+[._]ss[a-gi-z]
+[._]sw[a-p]
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================================================
+# SYSTEM FILES
+# ============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# ============================================================================
+# ARCHIVES AND PACKAGES
+# ============================================================================
+
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# ============================================================================
+# SECURITY AND CREDENTIALS
+# ============================================================================
+
+# API keys and tokens
+.env
+.env.local
+.env.prod
+.env.production
+credentials.json
+token.txt
+api_keys.txt
+secrets.json
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.p12
+
+# ============================================================================
+# MARKDOWN CLEANUP - REMOVE ALL TEST/DEMO FILES
+# ============================================================================
+*.md
+!README.md
+!SIMPULSE_SYSTEM_DOCUMENTATION.md
+# ============================================================================
+*.lnk
+desktop.ini
+$RECYCLE.BIN/
+
+# ============================================================================
+# System Files
+# ============================================================================
+.directory
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+
+# ============================================================================
+# Configuration Files (if they contain sensitive data)
+# ============================================================================
+config_local.py
+secrets.py
+.secrets
+private_config.py
+
+# ============================================================================
+# Telegram Bot Token Files
+# ============================================================================
+bot_token.txt
+*.token
+
+# ============================================================================
+# COM Port and Hardware Logs
+# ============================================================================
+port_*.log
+modem_*.log
+hardware_*.log
+
+# ============================================================================
+# Balance and SMS Data Exports
+# ============================================================================
+balance_export_*.csv
+sms_export_*.csv
+user_export_*.csv
+
+# ============================================================================
+# Script Output Files
+# ============================================================================
+force_*.py
+manual_*.py
+setup_*.py
+create_*.py
+reset_*.py
+fix_*.py
+check_*.py

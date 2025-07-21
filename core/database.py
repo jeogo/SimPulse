@@ -114,6 +114,22 @@ class DatabaseManager:
             logger.error(f"Failed to get all modems: {e}")
             return []
     
+    def get_all_sims(self) -> List[Dict]:
+        """Get all active SIMs"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute(
+                    """SELECT s.*, m.imei 
+                       FROM sims s 
+                       JOIN modems m ON s.modem_id = m.id 
+                       WHERE s.status = 'active' AND m.status = 'active'
+                       ORDER BY s.created_at"""
+                )
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get all SIMs: {e}")
+            return []
+    
     def delete_modem(self, modem_id: int) -> bool:
         """Mark modem as inactive"""
         try:
@@ -593,6 +609,22 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to get users by group ID: {e}")
             return []
+    
+    def get_group_users(self, group_name: str) -> List[Dict]:
+        """Get all users assigned to a specific group by group name"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT u.*, g.group_name 
+                    FROM telegram_users u
+                    JOIN groups g ON u.group_id = g.id  
+                    WHERE g.group_name = ? AND u.status = 'approved' AND g.status = 'active'
+                    ORDER BY u.created_at DESC
+                """, (group_name,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get users for group '{group_name}': {e}")
+            return []
 
     def get_group_by_id(self, group_id: int) -> Optional[Dict]:
         """Get group by ID"""
@@ -877,6 +909,61 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to update settlement PDF path: {e}")
             return False
+
+    def get_group_users(self, group_name: str) -> List[Dict]:
+        """Get all users in a specific group by group name"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT tu.id, tu.telegram_id, tu.full_name, tu.phone_number, 
+                           tu.status, tu.created_at, g.group_name
+                    FROM telegram_users tu
+                    JOIN groups g ON tu.group_id = g.id
+                    WHERE g.group_name = ? AND tu.status = 'approved'
+                """, (group_name,))
+                
+                users = [dict(row) for row in cursor.fetchall()]
+                logger.info(f"Found {len(users)} users in group '{group_name}'")
+                return users
+        except Exception as e:
+            logger.error(f"Failed to get group users for '{group_name}': {e}")
+            return []
+
+    def get_all_admin_users(self) -> List[Dict]:
+        """Get all admin users from telegram_users table"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT id, telegram_id, full_name, phone_number, status, created_at
+                    FROM telegram_users 
+                    WHERE is_admin = 1
+                """)
+                
+                admins = [dict(row) for row in cursor.fetchall()]
+                logger.info(f"Found {len(admins)} admin users")
+                return admins
+        except Exception as e:
+            logger.error(f"Failed to get admin users: {e}")
+            return []
+    
+    def get_group_users_by_group_id(self, group_id: int) -> List[Dict]:
+        """Get all approved users in a specific group by group ID"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT tu.id, tu.telegram_id, tu.full_name, tu.phone_number, 
+                           tu.status, tu.created_at, g.group_name
+                    FROM telegram_users tu
+                    JOIN groups g ON tu.group_id = g.id
+                    WHERE g.id = ? AND tu.status = 'approved'
+                """, (group_id,))
+                
+                users = [dict(row) for row in cursor.fetchall()]
+                logger.info(f"Found {len(users)} users in group ID {group_id}")
+                return users
+        except Exception as e:
+            logger.error(f"Failed to get group users for group ID {group_id}: {e}")
+            return []
 
 # Global database instance
 db = DatabaseManager()
